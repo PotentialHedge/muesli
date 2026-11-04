@@ -14,6 +14,7 @@ public final class MicRecorder {
     public init() {}
 
     public var secondsWritten: Double { writer?.secondsWritten ?? 0 }
+    public var writeError: Error? { writer?.lastError }
 
     public static func requestPermission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -23,14 +24,14 @@ public final class MicRecorder {
         }
     }
 
-    public func start(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
         // By default voice processing ducks all other audio, which would turn the meeting down.
         input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
 
         let format = input.outputFormat(forBus: 0)
-        let writer = try TrackWriter(url: url, inputFormat: format, tee: tee)
+        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
         self.writer = writer
         input.installTap(onBus: 0, bufferSize: 4096, format: format, block: Self.tapBlock(writing: writer))
 
@@ -40,7 +41,7 @@ public final class MicRecorder {
 
     /// Built in a nonisolated static context so the block never inherits an actor.
     private static func tapBlock(writing writer: TrackWriter) -> AVAudioNodeTapBlock {
-        { @Sendable buffer, _ in writer.write(buffer) }
+        { @Sendable buffer, when in writer.write(buffer, hostTime: when.isHostTimeValid ? when.hostTime : nil) }
     }
 
     public func stop() {

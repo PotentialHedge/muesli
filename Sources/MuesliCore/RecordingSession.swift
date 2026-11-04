@@ -43,15 +43,17 @@ public final class RecordingSession {
         try FileManager.default.createDirectory(at: audioFolder, withIntermediateDirectories: true)
         live.update { _ in }
 
+        // Both tracks are written against this clock, so their timelines line up.
+        let clockStart = mach_absolute_time()
         var failures = 0
         do {
-            try mic.start(url: folder.appendingPathComponent(MeetingFiles.micAudio), tee: tee(for: .mic))
+            try mic.start(url: folder.appendingPathComponent(MeetingFiles.micAudio), clockStart: clockStart, tee: tee(for: .mic))
         } catch {
             failures += 1
             warnings.append("Microphone not recording: \(error)")
         }
         do {
-            try system.start(url: folder.appendingPathComponent(MeetingFiles.systemAudio), tee: tee(for: .system))
+            try system.start(url: folder.appendingPathComponent(MeetingFiles.systemAudio), clockStart: clockStart, tee: tee(for: .system))
         } catch {
             failures += 1
             warnings.append("System audio not recording: \(error)")
@@ -65,6 +67,10 @@ public final class RecordingSession {
     public func stop(now: Date = .now) {
         mic.stop()
         system.stop()
+        if system.secondsWritten == 0, !warnings.contains(where: { $0.hasPrefix("System audio not recording") }) {
+            // The tap started but never delivered a buffer: usually permission, so say where to look.
+            warnings.append("No system audio was captured, so other participants are missing. Check System Settings → Privacy & Security → Screen & System Audio Recording.")
+        }
         live.update {
             $0.end = now
             $0.status = .recorded
@@ -97,6 +103,13 @@ public final class RecordingSession {
     /// Seconds of audio captured per track (for diagnostics).
     public func capturedSeconds() -> (mic: Double, system: Double) {
         (mic.secondsWritten, system.secondsWritten)
+    }
+
+    /// Last write error per track, if any (for diagnostics).
+    public func writeErrors() -> [String] {
+        [("mic", mic.writeError), ("system", system.writeError)].compactMap { name, error in
+            error.map { "\(name): \($0)" }
+        }
     }
 }
 

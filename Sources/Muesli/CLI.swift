@@ -84,6 +84,7 @@ enum CLI {
             session.stop()
             let captured = session.capturedSeconds()
             print(String(format: "Captured mic %.1fs, system %.1fs", captured.mic, captured.system))
+            session.writeErrors().forEach { print("write error: \($0)") }
             guard let transcriber else { return 0 }
 
             print("Transcribing…")

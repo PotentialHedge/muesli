@@ -8,15 +8,22 @@ import Foundation
 /// mid-meeting, the audio in a CAF can still be recovered. Mono, because transcription and
 /// diarization don't need stereo.
 ///
+/// Tracks share the session's host clock: when buffers arrive later than the samples written
+/// so far account for (the system tap delivers nothing while the output device is idle), the gap
+/// is filled with silence. So t seconds into mic.caf and system.caf are the same moment.
+///
 /// Called from audio threads. TODO: move encoding off the realtime thread (ring buffer → writer queue).
 public final class TrackWriter: @unchecked Sendable {
     private let file: AVAudioFile
     private let inputFormat: AVAudioFormat
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    /// Host time (mach ticks) of sample 0. nil: no alignment, just append.
+    private let clockStart: UInt64?
     private let lock = NSLock()
     private var isClosed = false
     public private(set) var framesWritten: AVAudioFramePosition = 0
-    public private(set) var lastError: Error?
+    public var lastError: Error? { lock.withLock { _lastError } }
+    private var _lastError: Error?
 
     public var secondsWritten: Double {
         lock.lock()
@@ -27,7 +34,8 @@ public final class TrackWriter: @unchecked Sendable {
     /// `inputFormat` must be Float32 (what both Core Audio taps and AVAudioEngine deliver);
     /// any channel count, interleaved or not. Channels are averaged down to mono.
     /// `tee` receives each mono buffer as it's written (for live transcription); it owns the buffer.
-    public init(url: URL, inputFormat: AVAudioFormat, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    public init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64? = nil,
+                tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         guard inputFormat.commonFormat == .pcmFormatFloat32 else {
             throw CocoaError(.featureUnsupported, userInfo: [
                 NSLocalizedDescriptionKey: "Unsupported input format \(inputFormat)",
@@ -41,29 +49,62 @@ public final class TrackWriter: @unchecked Sendable {
         file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         self.inputFormat = inputFormat
         self.tee = tee
+        self.clockStart = clockStart
     }
 
-    public func write(_ buffer: AVAudioPCMBuffer) {
+    /// Gaps shorter than this are jitter, not missing audio.
+    static let gapTolerance = 0.1
+
+    /// `hostTime`: when the buffer's first sample was captured (mach ticks), if known.
+    public func write(_ buffer: AVAudioPCMBuffer, hostTime: UInt64? = nil) {
         lock.lock()
         defer { lock.unlock() }
         guard !isClosed, buffer.frameLength > 0 else { return }
         do {
-            let mono = try Self.mixdown(buffer, to: file.processingFormat)
-            try file.write(from: mono)
-            framesWritten += AVAudioFramePosition(mono.frameLength)
-            if let tee {
-                // A mono input comes back as-is, and its memory belongs to the audio system: copy it.
-                tee(mono === buffer ? try Self.copy(mono) : mono)
+            if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: framesWritten,
+                                                sampleRate: file.processingFormat.sampleRate) {
+                try writeSilence(frames: missing)
             }
+            let mono = try Self.mixdown(buffer, to: file.processingFormat)
+            // A mono input comes back as-is, and its memory belongs to the audio system: copy it for the tee.
+            try append(mono, teeing: mono === buffer ? try Self.copy(mono) : mono)
         } catch {
-            lastError = error
+            _lastError = error
         }
     }
 
     /// For Core Audio IOProcs, which hand us a raw buffer list in `inputFormat`.
-    public func write(bufferList: UnsafePointer<AudioBufferList>) {
+    public func write(bufferList: UnsafePointer<AudioBufferList>, hostTime: UInt64? = nil) {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, bufferListNoCopy: bufferList, deallocator: nil) else { return }
-        write(buffer)
+        write(buffer, hostTime: hostTime)
+    }
+
+    private func append(_ mono: AVAudioPCMBuffer, teeing: @autoclosure () throws -> AVAudioPCMBuffer) throws {
+        try file.write(from: mono)
+        framesWritten += AVAudioFramePosition(mono.frameLength)
+        if let tee { tee(try teeing()) }
+    }
+
+    private func writeSilence(frames: AVAudioFramePosition) throws {
+        var remaining = frames
+        let chunk = AVAudioFramePosition(file.processingFormat.sampleRate)
+        while remaining > 0 {
+            let n = AVAudioFrameCount(min(remaining, chunk))
+            guard let silence = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: n) else { return }
+            silence.frameLength = n  // freshly allocated buffers are zeroed
+            try append(silence, teeing: silence)
+            remaining -= AVAudioFramePosition(n)
+        }
+    }
+
+    /// Frames of silence needed so a buffer captured at `hostTime` lands at its true position.
+    static func missingFrames(at hostTime: UInt64?, clockStart: UInt64?, written: AVAudioFramePosition,
+                              sampleRate: Double) -> AVAudioFramePosition? {
+        guard let hostTime, let clockStart, hostTime > clockStart else { return nil }
+        let seconds = Double(AudioConvertHostTimeToNanos(hostTime - clockStart)) / 1e9
+        let expected = AVAudioFramePosition(seconds * sampleRate)
+        let missing = expected - written
+        return Double(missing) > gapTolerance * sampleRate ? missing : nil
     }
 
     public func close() {

@@ -17,17 +17,18 @@ public final class SystemAudioRecorder {
     public init() {}
 
     public var secondsWritten: Double { writer?.secondsWritten ?? 0 }
+    public var writeError: Error? { writer?.lastError }
 
-    public func start(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         do {
-            try startTap(url: url, tee: tee)
+            try startTap(url: url, clockStart: clockStart, tee: tee)
         } catch {
             stop()
             throw error
         }
     }
 
-    private func startTap(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
+    private func startTap(url: URL, clockStart: UInt64?, tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
         // Leave our own process out of the tap (it might play sounds later).
         let ownProcess = try? AudioObjectID.process(for: getpid())
         let tap = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
@@ -58,7 +59,7 @@ public final class SystemAudioRecorder {
         ]
         try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "create aggregate device")
 
-        let writer = try TrackWriter(url: url, inputFormat: format, tee: tee)
+        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
         self.writer = writer
         try check(
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, Self.ioBlock(writing: writer, format: format)),
@@ -73,11 +74,13 @@ public final class SystemAudioRecorder {
     /// the only ones, but taking them from the end keeps this correct if a device ever adds its own.
     private static func ioBlock(writing writer: TrackWriter, format: AVAudioFormat) -> AudioDeviceIOBlock {
         let tapBufferCount = format.isInterleaved ? 1 : Int(format.channelCount)
-        return { @Sendable _, inputData, _, _, _ in
+        return { @Sendable _, inputData, inputTime, _, _ in
+            let time = inputTime.pointee
+            let hostTime = time.mFlags.contains(.hostTimeValid) ? time.mHostTime : nil
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             guard buffers.count >= tapBufferCount else { return }
             if buffers.count == tapBufferCount {
-                writer.write(bufferList: inputData)
+                writer.write(bufferList: inputData, hostTime: hostTime)
                 return
             }
             let tapList = AudioBufferList.allocate(maximumBuffers: tapBufferCount)
@@ -85,7 +88,7 @@ public final class SystemAudioRecorder {
             for i in 0..<tapBufferCount {
                 tapList[i] = buffers[buffers.count - tapBufferCount + i]
             }
-            writer.write(bufferList: tapList.unsafePointer)
+            writer.write(bufferList: tapList.unsafePointer, hostTime: hostTime)
         }
     }
 
@@ -108,3 +111,4 @@ public final class SystemAudioRecorder {
         tapID = .unknown
     }
 }
+
