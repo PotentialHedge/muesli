@@ -231,6 +231,12 @@ final class AppModel {
         NSWorkspace.shared.open(store.root)
     }
 
+    func copyAgentPrompt() {
+        let binary = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(AgentPrompt.text(binaryPath: binary), forType: .string)
+    }
+
     // MARK: - Menu bar presentation
 
     var statusSymbol: String {

@@ -77,6 +77,8 @@ Any search index is a derived cache that can be rebuilt from these files.
 - **CLI:** `list`, `show` and `search`, with `--json`.
 - **MCP:** `muesli mcp` offers `list_meetings`, `get_transcript` and `search_transcripts`. It only
   reads, and a meeting id only resolves to a folder that exists under the meetings root.
+- **Setup:** "Copy Prompt for Agent" in the menu copies a prompt with this binary's path, which
+  tells an agent how to install the MCP server and how to read what it returns.
 - **Hook:** after each final pass the app runs `~/.config/muesli/hooks/on-meeting-end`, if it's
   executable, with the meeting folder as its argument and working directory, plus
   `MUESLI_MEETING_DIR`, `MUESLI_TRANSCRIPT_MD`, `MUESLI_TRANSCRIPT_JSON` and `MUESLI_STATUS` (`done`

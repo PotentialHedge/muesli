@@ -54,6 +54,7 @@ private struct MenuContent: View {
             }
         }
         Button("Open Meetings Folder") { model.openMeetingsFolder() }
+        Button("Copy Prompt for Agent") { model.copyAgentPrompt() }
 
         Divider()
 

@@ -192,3 +192,26 @@ private func makeLibrary() throws -> MeetingLibrary {
         }
     }
 }
+
+@Suite struct AgentPromptTests {
+    @Test func containsAnInstallCommandAndConfigForThisBinary() {
+        let prompt = AgentPrompt.text(binaryPath: "/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli")
+        #expect(prompt.contains("claude mcp add --scope user muesli -- '/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli' mcp"))
+        #expect(prompt.contains(#"{"mcpServers":{"muesli":{"args":["mcp"],"command":"/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli"}}}"#))
+    }
+
+    @Test func namesEveryToolTheServerOffers() throws {
+        let prompt = AgentPrompt.text(binaryPath: "/x")
+        let line = #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#
+        let response = try #require(MCPServer(library: MeetingLibrary()).handle(line: line))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+        let tools = try #require((object["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        for name in tools.compactMap({ $0["name"] as? String }) {
+            #expect(prompt.contains(name))
+        }
+    }
+
+    @Test func quotesPathsForTheShell() {
+        #expect(AgentPrompt.shellQuoted("/a b/it's") == #"'/a b/it'\''s'"#)
+    }
+}
