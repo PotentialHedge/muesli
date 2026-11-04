@@ -12,6 +12,7 @@ import Foundation
 public final class TrackWriter: @unchecked Sendable {
     private let file: AVAudioFile
     private let inputFormat: AVAudioFormat
+    private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
     private let lock = NSLock()
     private var isClosed = false
     public private(set) var framesWritten: AVAudioFramePosition = 0
@@ -25,7 +26,8 @@ public final class TrackWriter: @unchecked Sendable {
 
     /// `inputFormat` must be Float32 (what both Core Audio taps and AVAudioEngine deliver);
     /// any channel count, interleaved or not. Channels are averaged down to mono.
-    public init(url: URL, inputFormat: AVAudioFormat) throws {
+    /// `tee` receives each mono buffer as it's written (for live transcription); it owns the buffer.
+    public init(url: URL, inputFormat: AVAudioFormat, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         guard inputFormat.commonFormat == .pcmFormatFloat32 else {
             throw CocoaError(.featureUnsupported, userInfo: [
                 NSLocalizedDescriptionKey: "Unsupported input format \(inputFormat)",
@@ -38,6 +40,7 @@ public final class TrackWriter: @unchecked Sendable {
         ]
         file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         self.inputFormat = inputFormat
+        self.tee = tee
     }
 
     public func write(_ buffer: AVAudioPCMBuffer) {
@@ -48,6 +51,10 @@ public final class TrackWriter: @unchecked Sendable {
             let mono = try Self.mixdown(buffer, to: file.processingFormat)
             try file.write(from: mono)
             framesWritten += AVAudioFramePosition(mono.frameLength)
+            if let tee {
+                // A mono input comes back as-is, and its memory belongs to the audio system: copy it.
+                tee(mono === buffer ? try Self.copy(mono) : mono)
+            }
         } catch {
             lastError = error
         }
@@ -65,6 +72,17 @@ public final class TrackWriter: @unchecked Sendable {
         guard !isClosed else { return }
         isClosed = true
         file.close()
+    }
+
+    static func copy(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength),
+              let source = buffer.floatChannelData, let target = copy.floatChannelData
+        else { throw CocoaError(.featureUnsupported) }
+        copy.frameLength = buffer.frameLength
+        for ch in 0..<Int(buffer.format.channelCount) {
+            target[ch].update(from: source[ch], count: Int(buffer.frameLength))
+        }
+        return copy
     }
 
     /// Averages all channels into one. Done by hand because AVAudioConverter silently outputs

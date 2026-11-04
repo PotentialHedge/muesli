@@ -23,14 +23,14 @@ public final class MicRecorder {
         }
     }
 
-    public func start(url: URL) throws {
+    public func start(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
         // By default voice processing ducks all other audio, which would turn the meeting down.
         input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
 
         let format = input.outputFormat(forBus: 0)
-        let writer = try TrackWriter(url: url, inputFormat: format)
+        let writer = try TrackWriter(url: url, inputFormat: format, tee: tee)
         self.writer = writer
         input.installTap(onBus: 0, bufferSize: 4096, format: format, block: Self.tapBlock(writing: writer))
 

@@ -18,16 +18,16 @@ public final class SystemAudioRecorder {
 
     public var secondsWritten: Double { writer?.secondsWritten ?? 0 }
 
-    public func start(url: URL) throws {
+    public func start(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         do {
-            try startTap(url: url)
+            try startTap(url: url, tee: tee)
         } catch {
             stop()
             throw error
         }
     }
 
-    private func startTap(url: URL) throws {
+    private func startTap(url: URL, tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
         // Leave our own process out of the tap (it might play sounds later).
         let ownProcess = try? AudioObjectID.process(for: getpid())
         let tap = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
@@ -58,7 +58,7 @@ public final class SystemAudioRecorder {
         ]
         try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "create aggregate device")
 
-        let writer = try TrackWriter(url: url, inputFormat: format)
+        let writer = try TrackWriter(url: url, inputFormat: format, tee: tee)
         self.writer = writer
         try check(
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, Self.ioBlock(writing: writer, format: format)),
