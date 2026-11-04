@@ -172,13 +172,31 @@ final class AppModel {
                 refreshRecentMeetings()
             }
             let phrases = await live()
+            var outcome = MeetingMetadata.Status.failed
+            defer { runHook(folder: folder, status: outcome) }
             do {
                 let transcriber = try await AppleSpeechTranscriber.make(preferred: language.map(Locale.init(identifier:)))
                 let processor = MeetingProcessor(transcriber: transcriber, diarizer: diarizer, keepAudio: keepAudio)
                 let result = try await processor.process(folder: folder, live: phrases)
                 if let warning = result.warnings.first { lastError = warning }
+                outcome = .done
             } catch {
                 lastError = "Transcription failed: \(error)"
+            }
+        }
+    }
+
+    /// Not awaited: a slow hook shouldn't keep the meeting showing as processing.
+    private func runHook(folder: URL, status: MeetingMetadata.Status) {
+        let hook = MeetingEndHook()
+        Task {
+            switch await hook.run(folder: folder, status: status) {
+            case .notInstalled, .exited(0):
+                break
+            case .exited(let code):
+                lastError = "on-meeting-end hook exited with status \(code). See \(hook.log.path)."
+            case .couldNotLaunch(let reason):
+                lastError = "Couldn't run the on-meeting-end hook: \(reason)"
             }
         }
     }

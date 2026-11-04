@@ -4,7 +4,7 @@ import MuesliCore
 /// The same binary doubles as a CLI: `Muesli.app/Contents/MacOS/Muesli <command>`.
 @MainActor
 enum CLI {
-    static let commands: Set<String> = ["mic-users", "record", "transcribe", "languages", "help", "--help", "-h"]
+    static let commands: Set<String> = ["mic-users", "record", "transcribe", "languages", "list", "show", "search", "mcp", "help", "--help", "-h"]
 
     static func run(_ args: [String]) -> Int32 {
         switch args.first {
@@ -12,6 +12,10 @@ enum CLI {
         case "record": return record(Array(args.dropFirst()))
         case "transcribe": return transcribe(Array(args.dropFirst()))
         case "languages": return languages()
+        case "list": return list(Array(args.dropFirst()))
+        case "show": return show(Array(args.dropFirst()))
+        case "search": return search(Array(args.dropFirst()))
+        case "mcp": return mcp(Array(args.dropFirst()))
         default:
             print(usage)
             return args.first.map { ["help", "--help", "-h"].contains($0) } == true ? 0 : 1
@@ -30,6 +34,12 @@ enum CLI {
                  [--no-diarize]     Label remote speech "Others" instead of Speaker 1..n
                  [--delete-audio]   Delete audio/ afterwards (kept by default here, so you can re-run)
           languages                 List transcription languages supported on this Mac
+          list [--limit N]          List meetings, most recent first
+          show MEETING              Print a meeting's transcript.md (MEETING: an id from list, or a folder)
+          search QUERY [--limit N]  Find text in all transcripts
+          mcp                       Run the MCP server on stdin/stdout
+
+          list, show and search also take --json. list, show, search and mcp also take --root DIR.
         """
 
     private static func micUsers() -> Int32 {
@@ -162,6 +172,100 @@ enum CLI {
         for locale in locales {
             print("\(locale.identifier(.bcp47))\t\(Locale.current.localizedString(forIdentifier: locale.identifier) ?? "")")
         }
+        return 0
+    }
+
+    // MARK: - Reading meetings
+
+    private struct LibraryOptions {
+        var positional: [String] = []
+        var store = MeetingStore()
+        var limit: Int?
+        var json = false
+
+        init?(_ args: [String]) {
+            var i = 0
+            while i < args.count {
+                switch args[i] {
+                case "--root" where i + 1 < args.count:
+                    store = MeetingStore(root: URL(fileURLWithPath: args[i + 1], isDirectory: true))
+                    i += 2
+                case "--limit" where i + 1 < args.count:
+                    guard let value = Int(args[i + 1]), value >= 0 else { return nil }
+                    limit = value
+                    i += 2
+                case "--json":
+                    json = true
+                    i += 1
+                case let arg where !arg.hasPrefix("--"):
+                    positional.append(arg)
+                    i += 1
+                default:
+                    return nil
+                }
+            }
+        }
+    }
+
+    private static func usageError() -> Int32 {
+        fail(usage)
+    }
+
+    /// Errors go to stderr, so piping `--json` output never picks them up.
+    private static func fail(_ message: String) -> Int32 {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
+        return 1
+    }
+
+    private static func printJSON(_ value: some Encodable) -> Int32 {
+        do {
+            print(String(decoding: try MeetingLibrary.encoded(value), as: UTF8.self))
+            return 0
+        } catch {
+            return fail("error: \(error)")
+        }
+    }
+
+    private static func list(_ args: [String]) -> Int32 {
+        guard let options = LibraryOptions(args), options.positional.isEmpty else { return usageError() }
+        let meetings = MeetingLibrary(store: options.store).meetings(limit: options.limit ?? .max)
+        if options.json { return printJSON(meetings) }
+        for meeting in meetings {
+            print("\(meeting.id)\t\(meeting.status)\t\(meeting.speakers.joined(separator: ", "))")
+        }
+        return 0
+    }
+
+    private static func show(_ args: [String]) -> Int32 {
+        guard let options = LibraryOptions(args), options.positional.count == 1, options.limit == nil else { return usageError() }
+        let reference = options.positional[0]
+        let path = URL(fileURLWithPath: reference, isDirectory: true)
+        let hasTranscript = FileManager.default.fileExists(atPath: path.appendingPathComponent(MeetingFiles.transcript).path)
+        guard let folder = MeetingLibrary(store: options.store).folder(id: reference) ?? (hasTranscript ? path : nil) else {
+            return fail("error: no meeting \"\(reference)\" (see muesli list)")
+        }
+        let file = options.json ? MeetingFiles.json : MeetingFiles.transcript
+        guard let text = try? String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8) else {
+            return fail("error: \(file) doesn't exist yet for this meeting")
+        }
+        print(text, terminator: text.hasSuffix("\n") ? "" : "\n")
+        return 0
+    }
+
+    private static func search(_ args: [String]) -> Int32 {
+        guard let options = LibraryOptions(args), options.positional.count == 1 else { return usageError() }
+        let hits = MeetingLibrary(store: options.store).search(options.positional[0], limit: options.limit ?? 20)
+        if options.json { return printJSON(hits) }
+        for hit in hits {
+            print("\(hit.meeting) [\(hit.timestamp)] \(hit.speaker): \(hit.excerpt)")
+        }
+        return 0
+    }
+
+    private static func mcp(_ args: [String]) -> Int32 {
+        guard let options = LibraryOptions(args), options.positional.isEmpty, options.limit == nil, !options.json else { return usageError() }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        MCPServer(library: MeetingLibrary(store: options.store), version: version).run()
         return 0
     }
 

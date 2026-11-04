@@ -28,7 +28,8 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 | Audio retention | Optional, **off by default** (transcript only): `audio/` is deleted after a successful final pass. "Keep Audio After Transcribing" in the menu keeps it |
 | Pipeline | Each track is transcribed live as it's recorded; `transcript.md` grows during the meeting (remote speech labelled "Others"). At the end, the final pass diarizes the system track and rewrites `transcript.md` + `transcript.json` with speakers. If live transcription of a track failed, the final pass transcribes its file instead |
 | Crash safety | Audio is CAF (readable without finalising) and is only deleted after success. Frontmatter `status` tracks progress (`recording → recorded → transcribing → done`, or `failed` + `error`); at launch, unfinished meetings that still have audio are processed. Failed ones aren't retried automatically (`muesli transcribe` re-runs) |
-| Extensibility | MCP server (stdio), `on-meeting-end` hook executables, CLI. No in-process plugins |
+| Extensibility | Read-only MCP server (stdio; hand-written, no SDK), an `on-meeting-end` hook executable, CLI. No in-process plugins |
+| Audio threads | The capture callback only mixes down into a preallocated lock-free ring (holds 11–22 s). A queue drains it every 50 ms to encode, write and feed live transcription. If that falls too far behind, audio is dropped rather than blocking the callback, and the gap becomes silence |
 | Distribution | Notarized DMG + Sparkle updates; Homebrew cask |
 | Permissions | Microphone, System Audio Recording, Notifications. Nothing else |
 
@@ -71,9 +72,23 @@ and `speakers`.
 
 Any search index is a derived cache that can be rebuilt from these files.
 
+## Agent access
+
+- **CLI:** `list`, `show` and `search`, with `--json`.
+- **MCP:** `muesli mcp` offers `list_meetings`, `get_transcript` and `search_transcripts`. It only
+  reads, and a meeting id only resolves to a folder that exists under the meetings root.
+- **Hook:** after each final pass the app runs `~/.config/muesli/hooks/on-meeting-end`, if it's
+  executable, with the meeting folder as its argument and working directory, plus
+  `MUESLI_MEETING_DIR`, `MUESLI_TRANSCRIPT_MD`, `MUESLI_TRANSCRIPT_JSON` and `MUESLI_STATUS` (`done`
+  or `failed`). Output is appended to `~/Library/Logs/Muesli/on-meeting-end.log`, and a non-zero exit
+  shows in the menu. It also runs after crash recovery, but not for `muesli transcribe` or
+  `muesli record`, which you ran yourself.
+
+Search is a substring scan of `transcript.md`, with no index, so meetings in progress are included.
+
 ## Size
 
-The app was 444 KB before speaker ID; with FluidAudio it is 4.2 MB (built with `-Osize`, local
+The app was 444 KB before speaker ID; with FluidAudio it is 4.5 MB (built with `-Osize`, local
 symbols stripped). Nearly all of that is FluidAudio's ASR/VAD code, which Swift can't dead-strip
 because type metadata keeps it alive; we use only its offline diarizer. Package traits already
 drop its TTS code and the 87 MB NeMo text-processing binary. Plus model downloads: ~34 MB for
@@ -98,5 +113,5 @@ diarization; the OS manages transcription models.
 2. Dual-track capture (tap + mic with echo cancellation) to disk ✓
 3. Live transcription → `transcript.md` ✓
 4. Final pass: diarization, `transcript.json` ✓
-5. CLI + MCP server + hooks
+5. CLI + MCP server + hooks ✓
 6. Signing, notarization, Sparkle, Homebrew cask
