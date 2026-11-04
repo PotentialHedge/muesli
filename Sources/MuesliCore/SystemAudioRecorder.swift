@@ -79,16 +79,7 @@ public final class SystemAudioRecorder {
             let hostTime = time.mFlags.contains(.hostTimeValid) ? time.mHostTime : nil
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             guard buffers.count >= tapBufferCount else { return }
-            if buffers.count == tapBufferCount {
-                writer.write(bufferList: inputData, hostTime: hostTime)
-                return
-            }
-            let tapList = AudioBufferList.allocate(maximumBuffers: tapBufferCount)
-            defer { tapList.unsafeMutablePointer.deallocate() }
-            for i in 0..<tapBufferCount {
-                tapList[i] = buffers[buffers.count - tapBufferCount + i]
-            }
-            writer.write(bufferList: tapList.unsafePointer, hostTime: hostTime)
+            writer.write(bufferList: inputData, firstBuffer: buffers.count - tapBufferCount, hostTime: hostTime)
         }
     }
 

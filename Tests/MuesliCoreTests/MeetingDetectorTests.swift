@@ -111,9 +111,16 @@ private let t0 = Date(timeIntervalSince1970: 1_000_000)
 import AVFAudio
 
 @Suite struct MixdownTests {
-    let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
+    func mixed(_ buffer: AVAudioPCMBuffer) -> [Float] {
+        var out = [Float](repeating: 0, count: Int(buffer.frameLength))
+        out.withUnsafeMutableBufferPointer {
+            TrackWriter.mix(buffer.audioBufferList, channels: Int(buffer.format.channelCount),
+                            interleaved: buffer.format.isInterleaved, offset: 0, frames: $0.count, into: $0.baseAddress!)
+        }
+        return out
+    }
 
-    @Test func averagesDeinterleavedChannels() throws {
+    @Test func averagesDeinterleavedChannels() {
         // Like the voice-processing mic input: 3 channels, deinterleaved.
         let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | 3)!
         let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channelLayout: layout)
@@ -121,13 +128,12 @@ import AVFAudio
         buffer.frameLength = 2
         for ch in 0..<3 { buffer.floatChannelData![ch][0] = 0.3; buffer.floatChannelData![ch][1] = Float(ch) }
 
-        let out = try TrackWriter.mixdown(buffer, to: mono)
-        #expect(out.frameLength == 2)
-        #expect(abs(out.floatChannelData![0][0] - 0.3) < 1e-6)
-        #expect(abs(out.floatChannelData![0][1] - 1.0) < 1e-6)
+        let out = mixed(buffer)
+        #expect(abs(out[0] - 0.3) < 1e-6)
+        #expect(abs(out[1] - 1.0) < 1e-6)
     }
 
-    @Test func averagesInterleavedStereo() throws {
+    @Test func averagesInterleavedStereo() {
         // Like the system audio tap: stereo, interleaved.
         let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2)!
@@ -135,8 +141,8 @@ import AVFAudio
         let samples = buffer.mutableAudioBufferList.pointee.mBuffers.mData!.assumingMemoryBound(to: Float.self)
         samples[0] = 0.2; samples[1] = 0.4; samples[2] = -1; samples[3] = 1
 
-        let out = try TrackWriter.mixdown(buffer, to: mono)
-        #expect(abs(out.floatChannelData![0][0] - 0.3) < 1e-6)
-        #expect(out.floatChannelData![0][1] == 0)
+        let out = mixed(buffer)
+        #expect(abs(out[0] - 0.3) < 1e-6)
+        #expect(out[1] == 0)
     }
 }

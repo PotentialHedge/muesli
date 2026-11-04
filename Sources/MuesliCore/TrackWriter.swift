@@ -1,6 +1,7 @@
 @preconcurrency import AVFAudio
 import CoreAudio
 import Foundation
+import Synchronization
 
 /// Writes one mono audio track to disk as AAC in a CAF container.
 ///
@@ -12,23 +13,43 @@ import Foundation
 /// so far account for (the system tap delivers nothing while the output device is idle), the gap
 /// is filled with silence. So t seconds into mic.caf and system.caf are the same moment.
 ///
-/// Called from audio threads. TODO: move encoding off the realtime thread (ring buffer → writer queue).
+/// `write` is called from one audio thread and must not block it, so it only mixes down into a
+/// lock-free ring. A queue drains the ring every 50 ms to encode, write to disk and feed the tee.
+/// If that falls so far behind that the ring fills, the lost audio becomes silence (by the rule
+/// above) and `lastError` reports it.
 public final class TrackWriter: @unchecked Sendable {
     private let file: AVAudioFile
-    private let inputFormat: AVAudioFormat
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
     /// Host time (mach ticks) of sample 0. nil: no alignment, just append.
     private let clockStart: UInt64?
+    private let channels: Int
+    private let isInterleaved: Bool
+    private let sampleRate: Double
+    private let ring = FrameRing()
+    private let queue = DispatchQueue(label: "muesli.track-writer", qos: .userInitiated)
+    private let timer: DispatchSourceTimer
+    private let isClosed = Atomic<Bool>(false)
+    /// Written to the file in batches, so the tee gets sensible buffers rather than one per slot.
+    private var pending: AVAudioPCMBuffer?
+    private static let batchFrames: AVAudioFrameCount = 4096
+
+    /// Guards the two values below, which the queue updates and anyone may read. Never taken by `write`.
     private let lock = NSLock()
-    private var isClosed = false
-    public private(set) var framesWritten: AVAudioFramePosition = 0
-    public var lastError: Error? { lock.withLock { _lastError } }
+    private var _framesWritten: AVAudioFramePosition = 0
     private var _lastError: Error?
 
-    public var secondsWritten: Double {
-        lock.lock()
-        defer { lock.unlock() }
-        return Double(framesWritten) / file.processingFormat.sampleRate
+    public var framesWritten: AVAudioFramePosition { lock.withLock { _framesWritten } }
+    public var lastError: Error? { lock.withLock { _lastError } }
+    public var secondsWritten: Double { Double(framesWritten) / sampleRate }
+
+    public enum WriteError: Error, CustomStringConvertible {
+        case droppedFrames(Int)
+
+        public var description: String {
+            switch self {
+            case .droppedFrames(let frames): "\(frames) audio frames were dropped because writing fell behind"
+            }
+        }
     }
 
     /// `inputFormat` must be Float32 (what both Core Audio taps and AVAudioEngine deliver);
@@ -47,52 +68,102 @@ public final class TrackWriter: @unchecked Sendable {
             AVNumberOfChannelsKey: 1,
         ]
         file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
-        self.inputFormat = inputFormat
+        channels = Int(inputFormat.channelCount)
+        isInterleaved = inputFormat.isInterleaved
+        sampleRate = file.processingFormat.sampleRate
         self.tee = tee
         self.clockStart = clockStart
+        timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05, leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self] in self?.drain() }
+        timer.activate()
+    }
+
+    deinit {
+        timer.cancel()
     }
 
     /// Gaps shorter than this are jitter, not missing audio.
     static let gapTolerance = 0.1
 
     /// `hostTime`: when the buffer's first sample was captured (mach ticks), if known.
+    /// The buffer must be in the writer's `inputFormat`.
     public func write(_ buffer: AVAudioPCMBuffer, hostTime: UInt64? = nil) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isClosed, buffer.frameLength > 0 else { return }
-        do {
-            if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: framesWritten,
-                                                sampleRate: file.processingFormat.sampleRate) {
-                try writeSilence(frames: missing)
-            }
-            let mono = try Self.mixdown(buffer, to: file.processingFormat)
-            // A mono input comes back as-is, and its memory belongs to the audio system: copy it for the tee.
-            try append(mono, teeing: mono === buffer ? try Self.copy(mono) : mono)
-        } catch {
-            _lastError = error
+        enqueue(buffer.audioBufferList, firstBuffer: 0, frames: Int(buffer.frameLength), hostTime: hostTime)
+    }
+
+    /// For Core Audio IOProcs, which hand us a raw buffer list in `inputFormat`. The track starts at
+    /// `firstBuffer`, for when a device has put buffers of its own in front of it.
+    public func write(bufferList: UnsafePointer<AudioBufferList>, firstBuffer: Int = 0, hostTime: UInt64? = nil) {
+        let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
+        guard firstBuffer < list.count else { return }
+        let bytesPerFrame = MemoryLayout<Float>.size * (isInterleaved ? channels : 1)
+        enqueue(bufferList, firstBuffer: firstBuffer, frames: Int(list[firstBuffer].mDataByteSize) / bytesPerFrame, hostTime: hostTime)
+    }
+
+    /// Runs on the audio thread: no locks, no allocation.
+    private func enqueue(_ list: UnsafePointer<AudioBufferList>, firstBuffer: Int, frames: Int, hostTime: UInt64?) {
+        guard frames > 0, !isClosed.load(ordering: .relaxed) else { return }
+        ring.write(frames: frames, hostTime: hostTime) { out, offset, count in
+            Self.mix(list, firstBuffer: firstBuffer, channels: channels, interleaved: isInterleaved,
+                     offset: offset, frames: count, into: out)
         }
     }
 
-    /// For Core Audio IOProcs, which hand us a raw buffer list in `inputFormat`.
-    public func write(bufferList: UnsafePointer<AudioBufferList>, hostTime: UInt64? = nil) {
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, bufferListNoCopy: bufferList, deallocator: nil) else { return }
-        write(buffer, hostTime: hostTime)
+    /// Runs on `queue`.
+    private func drain() {
+        do {
+            var failure: Error?
+            ring.drain { samples, hostTime in
+                guard failure == nil else { return }
+                do { try self.add(samples, hostTime: hostTime) } catch { failure = error }
+            }
+            if let failure { throw failure }
+            try flush()
+        } catch {
+            pending = nil
+            lock.withLock { _lastError = error }
+        }
     }
 
-    private func append(_ mono: AVAudioPCMBuffer, teeing: @autoclosure () throws -> AVAudioPCMBuffer) throws {
+    private func add(_ samples: UnsafeBufferPointer<Float>, hostTime: UInt64?) throws {
+        let queued = AVAudioFramePosition(pending?.frameLength ?? 0)
+        if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: framesWritten + queued,
+                                            sampleRate: sampleRate) {
+            try flush()
+            try writeSilence(frames: missing)
+        }
+        if let current = pending, current.frameLength + AVAudioFrameCount(samples.count) > current.frameCapacity {
+            try flush()
+        }
+        guard let batch = pending ?? AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: Self.batchFrames),
+              let out = batch.floatChannelData?[0], let source = samples.baseAddress
+        else { throw CocoaError(.featureUnsupported) }
+        (out + Int(batch.frameLength)).update(from: source, count: samples.count)
+        batch.frameLength += AVAudioFrameCount(samples.count)
+        pending = batch
+    }
+
+    private func flush() throws {
+        guard let batch = pending else { return }
+        pending = nil
+        try append(batch)
+    }
+
+    private func append(_ mono: AVAudioPCMBuffer) throws {
         try file.write(from: mono)
-        framesWritten += AVAudioFramePosition(mono.frameLength)
-        if let tee { tee(try teeing()) }
+        lock.withLock { _framesWritten += AVAudioFramePosition(mono.frameLength) }
+        tee?(mono)
     }
 
     private func writeSilence(frames: AVAudioFramePosition) throws {
         var remaining = frames
-        let chunk = AVAudioFramePosition(file.processingFormat.sampleRate)
+        let chunk = AVAudioFramePosition(sampleRate)
         while remaining > 0 {
             let n = AVAudioFrameCount(min(remaining, chunk))
             guard let silence = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: n) else { return }
             silence.frameLength = n  // freshly allocated buffers are zeroed
-            try append(silence, teeing: silence)
+            try append(silence)
             remaining -= AVAudioFramePosition(n)
         }
     }
@@ -107,55 +178,43 @@ public final class TrackWriter: @unchecked Sendable {
         return Double(missing) > gapTolerance * sampleRate ? missing : nil
     }
 
+    /// Writes out everything queued, so call it after the audio stops. Later writes are ignored.
     public func close() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isClosed else { return }
-        isClosed = true
-        file.close()
-    }
-
-    static func copy(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
-        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength),
-              let source = buffer.floatChannelData, let target = copy.floatChannelData
-        else { throw CocoaError(.featureUnsupported) }
-        copy.frameLength = buffer.frameLength
-        for ch in 0..<Int(buffer.format.channelCount) {
-            target[ch].update(from: source[ch], count: Int(buffer.frameLength))
+        guard !isClosed.exchange(true, ordering: .acquiringAndReleasing) else { return }
+        timer.cancel()
+        queue.sync {
+            drain()
+            if ring.droppedFrames > 0 {
+                lock.withLock { _lastError = _lastError ?? WriteError.droppedFrames(ring.droppedFrames) }
+            }
+            file.close()
         }
-        return copy
     }
 
-    /// Averages all channels into one. Done by hand because AVAudioConverter silently outputs
+    /// Averages all channels into `out`. Done by hand because AVAudioConverter silently outputs
     /// zeros for channel layouts it doesn't know, like the 3-channel voice-processing input.
-    static func mixdown(_ buffer: AVAudioPCMBuffer, to monoFormat: AVAudioFormat) throws -> AVAudioPCMBuffer {
-        let frames = Int(buffer.frameLength)
-        let channels = Int(buffer.format.channelCount)
-        if channels == 1, !buffer.format.isInterleaved { return buffer }
-
-        guard let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength),
-              let out = mono.floatChannelData?[0]
-        else { throw CocoaError(.featureUnsupported) }
-
+    /// `offset` and `frames` count from the start of the list's buffers. Safe on the audio thread.
+    static func mix(_ list: UnsafePointer<AudioBufferList>, firstBuffer: Int = 0, channels: Int, interleaved: Bool,
+                    offset: Int, frames: Int, into out: UnsafeMutablePointer<Float>) {
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: list))
         let scale = 1 / Float(channels)
-        if buffer.format.isInterleaved {
-            // floatChannelData is nil for interleaved buffers; read the single raw buffer: L R L R ...
-            guard let raw = buffer.audioBufferList.pointee.mBuffers.mData else { throw CocoaError(.featureUnsupported) }
+        if interleaved {
+            // One raw buffer: L R L R ...
+            guard let raw = buffers[firstBuffer].mData else { return }
             let samples = raw.assumingMemoryBound(to: Float.self)
             for frame in 0..<frames {
                 var sum: Float = 0
-                for ch in 0..<channels { sum += samples[frame * channels + ch] }
+                for ch in 0..<channels { sum += samples[(offset + frame) * channels + ch] }
                 out[frame] = sum * scale
             }
         } else {
-            guard let source = buffer.floatChannelData else { throw CocoaError(.featureUnsupported) }
-            for frame in 0..<frames {
-                var sum: Float = 0
-                for ch in 0..<channels { sum += source[ch][frame] }
-                out[frame] = sum * scale
+            guard firstBuffer + channels <= buffers.count else { return }
+            for frame in 0..<frames { out[frame] = 0 }
+            for ch in 0..<channels {
+                guard let raw = buffers[firstBuffer + ch].mData else { continue }
+                let samples = raw.assumingMemoryBound(to: Float.self)
+                for frame in 0..<frames { out[frame] += samples[offset + frame] * scale }
             }
         }
-        mono.frameLength = buffer.frameLength
-        return mono
     }
 }
