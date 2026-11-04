@@ -129,11 +129,13 @@ final class AppleTranscriptionStream: TranscriptionStream, Backpressured, @unche
             return try? converter.convert(item.buffer).map { AnalyzerInput(buffer: $0) }
         }
         do {
-            if let last = try await analyzer.analyzeSequence(inputs) {
-                try await analyzer.finalizeAndFinish(through: last)
-            } else {
+            guard let last = try await analyzer.analyzeSequence(inputs) else {
+                // No audio at all (e.g. the system track stayed silent): nothing to transcribe.
+                collector.cancel()
                 await analyzer.cancelAndFinishNow()
+                return []
             }
+            try await analyzer.finalizeAndFinish(through: last)
         } catch {
             await analyzer.cancelAndFinishNow()
             collector.cancel()

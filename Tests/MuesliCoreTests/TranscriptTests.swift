@@ -1,4 +1,5 @@
 @preconcurrency import AVFAudio
+import CoreAudio
 import Foundation
 import Testing
 @testable import MuesliCore
@@ -47,6 +48,21 @@ private func phrase(_ text: String, at start: Double, step: Double = 0.5) -> Phr
         let turns = [SpeakerTurn(speaker: "A", start: 17, end: 20.12), SpeakerTurn(speaker: "B", start: 20.12, end: 21)]
         let segments = TranscriptBuilder.segments(mic: [], system: [p], turns: turns)
         #expect(segments.map(\.text) == ["afternoon.", "I can help"])
+    }
+
+    @Test func wordStretchedOverPauseGoesToNextSpeaker() {
+        // Real case: "I" was timed 21.06–22.32, absorbing the pause before B started at ~22.
+        let words = [
+            Word(text: "Friday", start: 20.2, end: 20.5),
+            Word(text: " afternoon.", start: 20.5, end: 20.94),
+            Word(text: " I", start: 21.06, end: 22.32),
+            Word(text: " can", start: 22.32, end: 22.5),
+            Word(text: " have", start: 22.5, end: 22.8),
+        ]
+        let p = Phrase(start: 20.2, end: 22.8, text: "Friday afternoon. I can have", words: words)
+        let turns = [SpeakerTurn(speaker: "A", start: 16, end: 21.5), SpeakerTurn(speaker: "B", start: 21.9, end: 26)]
+        let segments = TranscriptBuilder.segments(mic: [], system: [p], turns: turns)
+        #expect(segments.map(\.text) == ["Friday afternoon.", "I can have"])
     }
 
     @Test func loneWordBetweenRunsJoinsCloserNeighbour() {
@@ -221,5 +237,26 @@ extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+@Suite struct ClockAlignmentTests {
+    /// Host ticks for `seconds` after `start`.
+    private func ticks(_ seconds: Double, after start: UInt64) -> UInt64 {
+        start + AudioConvertNanosToHostTime(UInt64(seconds * 1e9))
+    }
+
+    @Test func fillsGapWhenBuffersArriveLate() {
+        let start: UInt64 = 1_000_000_000
+        // Nothing written yet, first buffer captured 8 s in: 8 s of silence first.
+        let missing = TrackWriter.missingFrames(at: ticks(8, after: start), clockStart: start, written: 0, sampleRate: 48_000)
+        #expect(missing.map { abs($0 - 384_000) <= 1 } == true)
+    }
+
+    @Test func ignoresJitterAndEarlyBuffers() {
+        let start: UInt64 = 1_000_000_000
+        #expect(TrackWriter.missingFrames(at: ticks(1.05, after: start), clockStart: start, written: 48_000, sampleRate: 48_000) == nil)
+        #expect(TrackWriter.missingFrames(at: ticks(0.5, after: start), clockStart: start, written: 48_000, sampleRate: 48_000) == nil)
+        #expect(TrackWriter.missingFrames(at: nil, clockStart: start, written: 0, sampleRate: 48_000) == nil)
     }
 }

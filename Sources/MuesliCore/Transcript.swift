@@ -121,7 +121,7 @@ public enum TranscriptBuilder {
         guard !words.isEmpty else { return [] }
         var labels = words.map { names[bestTurn(for: $0, in: turns).speaker] ?? SpeakerLabel.others }
 
-        func gap(before k: Int) -> Double { words[k].start - words[k - 1].end }
+        func gap(before k: Int) -> Double { audibleStart(words[k]) - words[k - 1].end }
         var k = 1
         while k < words.count {
             guard labels[k] != labels[k - 1] else { k += 1; continue }
@@ -167,11 +167,18 @@ public enum TranscriptBuilder {
         return runs
     }
 
+    /// The transcriber sometimes stretches a word back over the pause before it ("I" lasting
+    /// 1.3 s). The sound is at the end, so a long word only counts from its last 0.35 s.
+    static func audibleStart(_ word: Word) -> Double {
+        max(word.start, word.end - 0.35)
+    }
+
     static func bestTurn(for word: Word, in turns: [SpeakerTurn]) -> SpeakerTurn {
         var best = turns[0]
         var bestOverlap = -Double.infinity
+        let start = audibleStart(word)
         for turn in turns {
-            let overlap = min(word.end, turn.end) - max(word.start, turn.start)
+            let overlap = min(word.end, turn.end) - max(start, turn.start)
             // Negative overlap is the gap; the closest turn wins when nothing overlaps.
             if overlap > bestOverlap {
                 bestOverlap = overlap
