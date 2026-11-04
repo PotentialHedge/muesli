@@ -26,6 +26,15 @@ final class AppModel {
     var language: String? = Settings.language?.identifier(.bcp47) {
         didSet { Settings.language = language.map(Locale.init(identifier:)) }
     }
+    /// The picker's entries: one per language rather than one per regional variant.
+    var languageChoices: [LanguageChoice] {
+        LanguageChoice.choices(from: languages, selected: language)
+    }
+    /// Regional variants of the chosen language, when there's more than one to choose from.
+    var languageVariants: [LanguageChoice.Variant] {
+        let variants = languageChoices.first { $0.tag == language }?.variants ?? []
+        return variants.count > 1 ? variants : []
+    }
     var keepAudio = Settings.keepAudio {
         didSet { Settings.keepAudio = keepAudio }
     }

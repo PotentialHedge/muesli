@@ -59,9 +59,15 @@ private struct MenuContent: View {
 
         Picker("Language", selection: $model.language) {
             Text("System Default").tag(String?.none)
-            ForEach(model.languages, id: \.self) { locale in
-                Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                    .tag(Optional(locale.identifier(.bcp47)))
+            ForEach(model.languageChoices, id: \.self) { choice in
+                Text(choice.name).tag(Optional(choice.tag))
+            }
+        }
+        if !model.languageVariants.isEmpty {
+            Picker("Variant", selection: $model.language) {
+                ForEach(model.languageVariants, id: \.self) { variant in
+                    Text(variant.name).tag(Optional(variant.tag))
+                }
             }
         }
         Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
