@@ -18,7 +18,11 @@ private struct MenuContent: View {
     let model: AppModel
 
     var body: some View {
+        @Bindable var model = model
         Text(model.statusText)
+        if let processing = model.processingText {
+            Text(processing)
+        }
 
         switch model.status {
         case .idle:
@@ -50,6 +54,17 @@ private struct MenuContent: View {
             }
         }
         Button("Open Meetings Folder") { model.openMeetingsFolder() }
+
+        Divider()
+
+        Picker("Language", selection: $model.language) {
+            Text("System Default").tag(String?.none)
+            ForEach(model.languages, id: \.self) { locale in
+                Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                    .tag(Optional(locale.identifier(.bcp47)))
+            }
+        }
+        Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
 
         Divider()
 

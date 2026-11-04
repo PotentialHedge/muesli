@@ -3,7 +3,11 @@ import Foundation
 /// User preferences shared by the app and the CLI. Stored under the app's bundle id, so the CLI
 /// sees the same values even when run outside the app bundle.
 public enum Settings {
-    nonisolated(unsafe) static let defaults = UserDefaults(suiteName: "dev.muesli.Muesli") ?? .standard
+    static let bundleID = "dev.muesli.Muesli"
+    /// Inside the bundle that domain is `.standard` (a suite named after your own bundle id doesn't work).
+    nonisolated(unsafe) static let defaults = Bundle.main.bundleIdentifier == bundleID
+        ? .standard
+        : UserDefaults(suiteName: bundleID) ?? .standard
 
     /// Transcription language. nil = the system language (or the closest supported one).
     public static var language: Locale? {

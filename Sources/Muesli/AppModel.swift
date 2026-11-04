@@ -18,11 +18,24 @@ final class AppModel {
     private(set) var recentMeetings: [URL] = []
     /// Bundle IDs of apps the user wants recorded without asking.
     private(set) var alwaysRecord: Set<String>
+    /// Meeting folders whose final pass (transcription, speaker ID) is running.
+    private(set) var processing: Set<URL> = []
+    /// Transcription languages this Mac supports (loaded at launch).
+    private(set) var languages: [Locale] = []
+    /// BCP-47 tag, nil = system default.
+    var language: String? = Settings.language?.identifier(.bcp47) {
+        didSet { Settings.language = language.map(Locale.init(identifier:)) }
+    }
+    var keepAudio = Settings.keepAudio {
+        didSet { Settings.keepAudio = keepAudio }
+    }
 
     let store = MeetingStore()
     @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private let notifications = NotificationController()
+    /// Shared so the CoreML models stay loaded between meetings.
+    @ObservationIgnored private let diarizer = FluidDiarizer()
 
     private static let alwaysRecordKey = "alwaysRecord"
 
@@ -32,6 +45,10 @@ final class AppModel {
         notifications.setUp()
         refreshRecentMeetings()
         startPolling()
+        Task {
+            languages = await AppleSpeechTranscriber.offeredLocales()
+            resumeUnfinishedMeetings()
+        }
     }
 
     // MARK: - Detection
@@ -108,12 +125,16 @@ final class AppModel {
                 lastError = "Muesli needs microphone access. Enable it in System Settings → Privacy & Security → Microphone."
                 return
             }
+            // Without a transcriber we still record; the final pass will report the problem.
+            let transcriber = try? await AppleSpeechTranscriber.make(preferred: language.map(Locale.init(identifier:)))
             do {
-                let session = try RecordingSession(store: store, app: app)
+                let session = try RecordingSession(store: store, app: app, transcriber: transcriber)
                 try session.start()
                 lastError = session.warnings.first
                 status = .recording(session)
                 refreshRecentMeetings()
+                // Fetch the diarization models now (first time only) so they're ready at the end.
+                Task { [diarizer] in try? await diarizer.prepare() }
             } catch {
                 lastError = "\(error)"
             }
@@ -123,8 +144,48 @@ final class AppModel {
     func stopRecording() {
         guard case .recording(let session) = status else { return }
         session.stop()
+        lastError = session.warnings.last
         status = .idle
         refreshRecentMeetings()
+        process(session.folder) { await session.finishLiveTranscription() }
+    }
+
+    // MARK: - Final pass
+
+    /// Transcribes (what wasn't done live) and identifies speakers, then tidies up the folder.
+    private func process(_ folder: URL, live: @escaping @MainActor () async -> [Track: [Phrase]] = { [:] }) {
+        guard !processing.contains(folder) else { return }
+        processing.insert(folder)
+        let (language, keepAudio, diarizer) = (language, keepAudio, diarizer)
+        Task {
+            defer {
+                processing.remove(folder)
+                refreshRecentMeetings()
+            }
+            let phrases = await live()
+            do {
+                let transcriber = try await AppleSpeechTranscriber.make(preferred: language.map(Locale.init(identifier:)))
+                let processor = MeetingProcessor(transcriber: transcriber, diarizer: diarizer, keepAudio: keepAudio)
+                let result = try await processor.process(folder: folder, live: phrases)
+                if let warning = result.warnings.first { lastError = warning }
+            } catch {
+                lastError = "Transcription failed: \(error)"
+            }
+        }
+    }
+
+    /// Meetings interrupted by a quit or crash still have their audio: finish them now.
+    /// Failed ones are left alone (re-run with `muesli transcribe`), so a bad file can't loop.
+    private func resumeUnfinishedMeetings() {
+        let unfinished: Set<MeetingMetadata.Status> = [.recording, .recorded, .transcribing]
+        for folder in store.recentMeetings(limit: 20) {
+            let md = folder.appendingPathComponent(MeetingFiles.transcript)
+            guard let text = try? String(contentsOf: md, encoding: .utf8),
+                  let metadata = MeetingMetadata(parsing: text), unfinished.contains(metadata.status),
+                  FileManager.default.fileExists(atPath: folder.appendingPathComponent(MeetingFiles.audio).path)
+            else { continue }
+            process(folder)
+        }
     }
 
     // MARK: - Settings & files
@@ -147,9 +208,18 @@ final class AppModel {
 
     var statusSymbol: String {
         switch status {
-        case .idle: "waveform"
+        case .idle: processing.isEmpty ? "waveform" : "ellipsis.circle"
         case .detected: "mic.circle"
         case .recording: "record.circle.fill"
+        }
+    }
+
+    /// Shown under the main status line while a final pass runs (it can overlap a new recording).
+    var processingText: String? {
+        switch processing.count {
+        case 0: nil
+        case 1: "Transcribing \(processing.first!.lastPathComponent)…"
+        default: "Transcribing \(processing.count) meetings…"
         }
     }
 
