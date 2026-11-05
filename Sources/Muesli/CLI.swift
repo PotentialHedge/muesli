@@ -27,7 +27,7 @@ enum CLI {
 
           mic-users                 List processes using the microphone and the meeting app each maps to
           record [--seconds N]      Record mic + system audio (default 10s) into a new meeting folder
-                 [--root DIR]       Meetings root (default ~/Meetings)
+                 [--root DIR]       Meetings root (default: the app's setting, else ~/Meetings)
                  [--no-transcribe]  Skip the transcription pass afterwards
           transcribe FOLDER         (Re)run transcription + speaker identification on a meeting folder
                  [--language TAG]   e.g. en-US, de-DE (default: the app's setting, else the system language)

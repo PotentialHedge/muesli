@@ -80,6 +80,7 @@ private struct MenuContent: View {
             }
         }
         Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
+        Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
 
         Divider()
 

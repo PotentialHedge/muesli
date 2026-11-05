@@ -13,7 +13,12 @@ public struct MeetingStore: Sendable {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Meetings", isDirectory: true)
     }
 
-    public init(root: URL = MeetingStore.defaultRoot) {
+    /// The folder chosen in the app, else the default. The CLI reads the same setting.
+    public static var configuredRoot: URL {
+        Settings.meetingsFolder ?? defaultRoot
+    }
+
+    public init(root: URL = MeetingStore.configuredRoot) {
         self.root = root
     }
 

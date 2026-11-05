@@ -36,7 +36,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 ## File layout
 
 ```
-~/Meetings/                      # configurable
+~/Meetings/                      # configurable (menu: Meetings Folder…)
   2026/11/
     2026-11-04 1030 Zoom/
       transcript.md              # YAML frontmatter + speaker-labelled text

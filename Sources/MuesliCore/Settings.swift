@@ -20,4 +20,10 @@ public enum Settings {
         get { defaults.bool(forKey: "keepAudio") }
         set { defaults.set(newValue, forKey: "keepAudio") }
     }
+
+    /// Where meeting folders go. nil = `MeetingStore.defaultRoot` (~/Meetings).
+    public static var meetingsFolder: URL? {
+        get { defaults.string(forKey: "meetingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) } }
+        set { defaults.set(newValue?.standardizedFileURL.path, forKey: "meetingsFolder") }
+    }
 }

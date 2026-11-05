@@ -53,7 +53,7 @@ final class AppModel {
         didSet { Settings.keepAudio = keepAudio }
     }
 
-    let store = MeetingStore()
+    private(set) var store = MeetingStore()
     @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var finishTask: Task<Void, Never>?
@@ -331,6 +331,34 @@ final class AppModel {
     func openMeetingsFolder() {
         try? FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
         NSWorkspace.shared.open(store.root)
+    }
+
+    /// Where new meetings go. Existing meetings stay where they are.
+    func chooseMeetingsFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = store.root
+        panel.prompt = "Choose"
+        panel.message = "New meetings will be saved here. Existing meetings stay where they are."
+        // A menu bar app isn't frontmost, so the panel would open behind other windows.
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        setMeetingsFolder(url)
+    }
+
+    func setMeetingsFolder(_ url: URL) {
+        let url = url.standardizedFileURL
+        Settings.meetingsFolder = url == MeetingStore.defaultRoot.standardizedFileURL ? nil : url
+        store = MeetingStore(root: url)
+        refreshRecentMeetings()
+    }
+
+    /// The meetings folder for the menu, with the home directory as ~.
+    var meetingsFolderName: String {
+        (store.root.path as NSString).abbreviatingWithTildeInPath
     }
 
     func copyAgentPrompt() {
