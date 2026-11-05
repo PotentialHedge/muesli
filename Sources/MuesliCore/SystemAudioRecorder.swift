@@ -11,20 +11,20 @@ public final class SystemAudioRecorder {
     private var tapID = AudioObjectID.unknown
     private var aggregateID = AudioObjectID.unknown
     private var ioProcID: AudioDeviceIOProcID?
-    private var writer: TrackWriter?
+    private var track: SegmentedTrack?
     private let queue = DispatchQueue(label: "muesli.system-audio", qos: .userInitiated)
 
     public init() {}
 
-    public var secondsWritten: Double { writer?.secondsWritten ?? 0 }
-    public var writeError: Error? { writer?.lastError }
+    public var secondsWritten: Double { track?.seconds ?? 0 }
+    public var writeError: Error? { track?.writer.lastError }
 
     public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         do {
             let format = try makeTap()
-            let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
-            self.writer = writer
-            try capture(format: format, into: writer)
+            let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+            self.track = track
+            try capture(format: format, into: track.writer)
         } catch {
             stop()
             throw error
@@ -50,13 +50,13 @@ public final class SystemAudioRecorder {
         tapID = .unknown
     }
 
-    /// The time paused becomes silence in the track. Does nothing if the track never started.
+    /// The time paused becomes silence in the track. If the output now runs at another sample rate,
+    /// the track continues in a new file. Does nothing if the track never started.
     public func resume() throws {
-        guard let writer else { return }
+        guard let track else { return }
         do {
             let format = try makeTap()
-            try writer.setInput(format)
-            try capture(format: format, into: writer)
+            try capture(format: format, into: track.writer(resumingWith: format))
         } catch {
             pause()
             throw error
@@ -122,6 +122,6 @@ public final class SystemAudioRecorder {
 
     public func stop() {
         pause()
-        writer?.close()
+        track?.close()
     }
 }

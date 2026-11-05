@@ -20,8 +20,10 @@ import Synchronization
 public final class TrackWriter: @unchecked Sendable {
     private let file: AVAudioFile
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
-    /// Host time (mach ticks) of sample 0. nil: no alignment, just append.
+    /// Host time (mach ticks) of the track's start. nil: no alignment, just append.
     private let clockStart: UInt64?
+    /// Where in the track this file's sample 0 is, for a file that continues an earlier one.
+    private let startFrame: AVAudioFramePosition
     /// The input's layout. Only changed by `setInput`, while nothing is capturing.
     private var channels: Int
     private var isInterleaved: Bool
@@ -42,13 +44,18 @@ public final class TrackWriter: @unchecked Sendable {
     public var framesWritten: AVAudioFramePosition { lock.withLock { _framesWritten } }
     public var lastError: Error? { lock.withLock { _lastError } }
     public var secondsWritten: Double { Double(framesWritten) / sampleRate }
+    /// Where this file ends in the track: where a file continuing it starts.
+    public var endSeconds: Double { Double(startFrame + framesWritten) / sampleRate }
 
     public enum WriteError: Error, CustomStringConvertible {
         case droppedFrames(Int)
+        /// From `setInput`: the file keeps its first input's rate, so continue in a new file.
+        case sampleRateChanged(from: Double, to: Double)
 
         public var description: String {
             switch self {
             case .droppedFrames(let frames): "\(frames) audio frames were dropped because writing fell behind"
+            case .sampleRateChanged(let from, let to): "The input changed from \(Int(from)) Hz to \(Int(to)) Hz"
             }
         }
     }
@@ -56,7 +63,9 @@ public final class TrackWriter: @unchecked Sendable {
     /// `inputFormat` must be Float32 (what both Core Audio taps and AVAudioEngine deliver);
     /// any channel count, interleaved or not. Channels are averaged down to mono.
     /// `tee` receives each mono buffer as it's written (for live transcription); it owns the buffer.
-    public init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64? = nil,
+    /// `startSeconds`: where in the track this file starts, if it continues an earlier file
+    /// (`endSeconds` of that one). The gap from there to the first buffer becomes silence.
+    public init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64? = nil, startSeconds: Double = 0,
                 tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         guard inputFormat.commonFormat == .pcmFormatFloat32 else {
             throw CocoaError(.featureUnsupported, userInfo: [
@@ -72,6 +81,7 @@ public final class TrackWriter: @unchecked Sendable {
         channels = Int(inputFormat.channelCount)
         isInterleaved = inputFormat.isInterleaved
         sampleRate = file.processingFormat.sampleRate
+        startFrame = AVAudioFramePosition((startSeconds * sampleRate).rounded())
         self.tee = tee
         self.clockStart = clockStart
         timer = DispatchSource.makeTimerSource(queue: queue)
@@ -85,13 +95,14 @@ public final class TrackWriter: @unchecked Sendable {
     }
 
     /// For resuming a paused track from a newly started capture, whose device may have a different
-    /// channel layout. Call only while nothing is writing. The sample rate can't change: the file
-    /// and the tee keep the first input's rate.
+    /// channel layout. Call only while nothing is writing. The sample rate can't change (it throws
+    /// `WriteError.sampleRateChanged`): continue in a new file instead (see `SegmentedTrack`).
     public func setInput(_ format: AVAudioFormat) throws {
-        guard format.commonFormat == .pcmFormatFloat32, format.sampleRate == sampleRate else {
-            throw CocoaError(.featureUnsupported, userInfo: [
-                NSLocalizedDescriptionKey: "The input changed from \(Int(sampleRate)) Hz to \(format)",
-            ])
+        guard format.commonFormat == .pcmFormatFloat32 else {
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "Unsupported input format \(format)"])
+        }
+        guard format.sampleRate == sampleRate else {
+            throw WriteError.sampleRateChanged(from: sampleRate, to: format.sampleRate)
         }
         queue.sync {
             channels = Int(format.channelCount)
@@ -144,7 +155,7 @@ public final class TrackWriter: @unchecked Sendable {
 
     private func add(_ samples: UnsafeBufferPointer<Float>, hostTime: UInt64?) throws {
         let queued = AVAudioFramePosition(pending?.frameLength ?? 0)
-        if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: framesWritten + queued,
+        if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: startFrame + framesWritten + queued,
                                             sampleRate: sampleRate) {
             try flush()
             try writeSilence(frames: missing)

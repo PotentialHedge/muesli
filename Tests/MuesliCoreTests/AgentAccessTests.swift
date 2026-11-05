@@ -65,10 +65,35 @@ private func makeLibrary() throws -> MeetingLibrary {
     }
 
     func callTool(_ server: MCPServer, _ name: String, _ arguments: [String: Any]) throws -> (text: String, isError: Bool) {
+        let (texts, isError) = try callToolAll(server, name, arguments)
+        return (try #require(texts.first), isError)
+    }
+
+    /// Every text block of the result, for the folder change notice that follows the answer.
+    func callToolAll(_ server: MCPServer, _ name: String, _ arguments: [String: Any]) throws -> (texts: [String], isError: Bool) {
         let response = try call(server, ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
         let result = try #require(response["result"] as? [String: Any])
-        let content = try #require((result["content"] as? [[String: Any]])?.first)
-        return (try #require(content["text"] as? String), try #require(result["isError"] as? Bool))
+        let content = try #require(result["content"] as? [[String: Any]])
+        return (content.compactMap { $0["text"] as? String }, try #require(result["isError"] as? Bool))
+    }
+
+    @Test func followsAMovedFolderAndSaysSoOnce() throws {
+        let first = try makeLibrary().store.root
+        let second = try makeLibrary().store.root
+        var current = first
+        let server = MCPServer(root: { current })
+        let id = "2026/11/2026-11-03 0900 Zoom"
+
+        #expect(try callToolAll(server, "list_meetings", [:]).texts.count == 1)
+        try FileManager.default.removeItem(at: first)
+        current = second
+
+        let moved = try callToolAll(server, "get_transcript", ["meeting": id])
+        #expect(moved.texts.count == 2)
+        #expect(moved.texts[0].contains("Great, ship it."))
+        #expect(moved.texts[1].contains("meetings folder has moved"))
+        #expect(moved.texts[1].contains(second.lastPathComponent))
+        #expect(try callToolAll(server, "list_meetings", [:]).texts.count == 1)
     }
 
     @Test func initializeAgreesOnAVersion() throws {

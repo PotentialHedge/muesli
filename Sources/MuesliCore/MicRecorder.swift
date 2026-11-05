@@ -9,12 +9,12 @@ import Foundation
 /// transcribed twice, once as "Me".
 public final class MicRecorder {
     private let engine = AVAudioEngine()
-    private var writer: TrackWriter?
+    private var track: SegmentedTrack?
 
     public init() {}
 
-    public var secondsWritten: Double { writer?.secondsWritten ?? 0 }
-    public var writeError: Error? { writer?.lastError }
+    public var secondsWritten: Double { track?.seconds ?? 0 }
+    public var writeError: Error? { track?.writer.lastError }
 
     public static func requestPermission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -26,9 +26,9 @@ public final class MicRecorder {
 
     public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         let format = try prepareInput()
-        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
-        self.writer = writer
-        try capture(format: format, into: writer)
+        let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+        self.track = track
+        try capture(format: format, into: track.writer)
     }
 
     /// Releases the mic but keeps the track open, so `resume()` carries on in the same file.
@@ -37,12 +37,12 @@ public final class MicRecorder {
         engine.stop()
     }
 
-    /// The time paused becomes silence in the track. Does nothing if the track never started.
+    /// The time paused becomes silence in the track. If the mic now has another sample rate (a
+    /// different device), the track continues in a new file. Does nothing if the track never started.
     public func resume() throws {
-        guard let writer else { return }
+        guard let track else { return }
         let format = try prepareInput()
-        try writer.setInput(format)  // the input device may have changed meanwhile
-        try capture(format: format, into: writer)
+        try capture(format: format, into: track.writer(resumingWith: format))
     }
 
     private func prepareInput() throws -> AVAudioFormat {
@@ -71,6 +71,6 @@ public final class MicRecorder {
 
     public func stop() {
         pause()
-        writer?.close()
+        track?.close()
     }
 }

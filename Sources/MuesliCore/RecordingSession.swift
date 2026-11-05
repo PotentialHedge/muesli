@@ -76,8 +76,9 @@ public final class RecordingSession {
     }
 
     /// Carries on recording after `pause()`. The pause becomes silence in both tracks, so they stay
-    /// aligned and transcript times keep counting from the start of the meeting. Throws if neither
-    /// track could restart (e.g. the mic's sample rate changed); the session is then still paused.
+    /// aligned and transcript times keep counting from the start of the meeting. A track whose
+    /// device changed sample rate continues in a second file (see `TrackSegments`). Throws if
+    /// neither track could restart; the session is then still paused.
     public func resume() throws {
         guard pausedAt != nil else { return }
         var errors: [String] = []

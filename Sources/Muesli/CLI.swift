@@ -180,6 +180,8 @@ enum CLI {
     private struct LibraryOptions {
         var positional: [String] = []
         var store = MeetingStore()
+        /// Set with --root, rather than taken from the app's setting.
+        var fixedRoot = false
         var limit: Int?
         var json = false
 
@@ -189,6 +191,7 @@ enum CLI {
                 switch args[i] {
                 case "--root" where i + 1 < args.count:
                     store = MeetingStore(root: URL(fileURLWithPath: args[i + 1], isDirectory: true))
+                    fixedRoot = true
                     i += 2
                 case "--limit" where i + 1 < args.count:
                     guard let value = Int(args[i + 1]), value >= 0 else { return nil }
@@ -265,7 +268,9 @@ enum CLI {
     private static func mcp(_ args: [String]) -> Int32 {
         guard let options = LibraryOptions(args), options.positional.isEmpty, options.limit == nil, !options.json else { return usageError() }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        MCPServer(library: MeetingLibrary(store: options.store), version: version).run()
+        // Without --root, follow the app's setting: a server outlives a change of folder.
+        let root = options.fixedRoot ? { options.store.root } : { MeetingStore.configuredRoot }
+        MCPServer(root: root, version: version).run()
         return 0
     }
 

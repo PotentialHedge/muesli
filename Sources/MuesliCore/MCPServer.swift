@@ -4,16 +4,38 @@ import Foundation
 ///
 /// Written by hand because a few dozen lines of JSON don't justify a dependency in an app that
 /// counts its megabytes. It has tools only, no prompts or resources.
-public struct MCPServer {
-    public let library: MeetingLibrary
+///
+/// The meetings folder is looked up on every tool call, so a server an agent started earlier
+/// follows the folder when it's changed in the app, and says so once.
+public final class MCPServer {
+    private let root: () -> URL
     public var version: String
+    /// The folder the last tool call used.
+    private var lastRoot: URL?
 
     /// Newest first. We use nothing that differs between these, so any of them works.
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 
-    public init(library: MeetingLibrary, version: String = "0") {
-        self.library = library
+    /// Always serves `library`'s folder.
+    public convenience init(library: MeetingLibrary, version: String = "0") {
+        let root = library.store.root
+        self.init(root: { root }, version: version)
+    }
+
+    /// `root` is asked for the meetings folder before each tool call.
+    public init(root: @escaping () -> URL, version: String = "0") {
+        self.root = root
         self.version = version
+    }
+
+    /// A note for the agent when the folder changed since the last tool call. Ids are relative
+    /// to the folder, so they keep working; paths it saw earlier don't.
+    private func folderChangeNotice(now current: URL) -> String? {
+        defer { lastRoot = current }
+        guard let lastRoot, lastRoot.standardizedFileURL.path != current.standardizedFileURL.path else { return nil }
+        func name(_ url: URL) -> String { (url.path as NSString).abbreviatingWithTildeInPath }
+        return "Note: the meetings folder has moved from \(name(lastRoot)) to \(name(current)) since your last call. "
+            + "Meeting ids still work; file paths from earlier results are out of date."
     }
 
     /// Handles one incoming line. Returns the line to send back; notifications get none.
@@ -71,18 +93,24 @@ public struct MCPServer {
             guard let name = params["name"] as? String, Self.tools.contains(where: { $0["name"] as? String == name }) else {
                 throw RPCError(code: -32602, message: "Unknown tool")
             }
+            let current = root()
+            let notice = folderChangeNotice(now: current)
+            func content(_ text: String) -> [[String: String]] {
+                [["type": "text", "text": text]] + (notice.map { [["type": "text", "text": $0]] } ?? [])
+            }
             do {
-                let text = try call(tool: name, arguments: params["arguments"] as? [String: Any] ?? [:])
-                return ["content": [["type": "text", "text": text]], "isError": false]
+                let text = try call(tool: name, arguments: params["arguments"] as? [String: Any] ?? [:],
+                                    library: MeetingLibrary(store: MeetingStore(root: current)))
+                return ["content": content(text), "isError": false]
             } catch let error as ToolError {
-                return ["content": [["type": "text", "text": error.message]], "isError": true]
+                return ["content": content(error.message), "isError": true]
             }
         default:
             throw RPCError(code: -32601, message: "Method not found: \(method)")
         }
     }
 
-    private func call(tool: String, arguments: [String: Any]) throws -> String {
+    private func call(tool: String, arguments: [String: Any], library: MeetingLibrary) throws -> String {
         switch tool {
         case "list_meetings":
             return try json(library.meetings(limit: arguments["limit"] as? Int ?? 20))
