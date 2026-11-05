@@ -61,7 +61,12 @@ private struct MenuContent: View {
         }
 
         if let error = model.lastError {
-            Text(error)
+            let summary = AppModel.menuSummary(of: error)
+            if summary == error {
+                Text(error)
+            } else {
+                Button(summary) { model.showLastError() }
+            }
         }
 
         Divider()
@@ -78,28 +83,28 @@ private struct MenuContent: View {
 
         Divider()
 
-        Picker("Language", selection: $model.language) {
-            Text("System Default").tag(String?.none)
-            ForEach(model.languageChoices, id: \.self) { choice in
-                Text(choice.name).tag(Optional(choice.tag))
-            }
-        }
-        if !model.languageVariants.isEmpty {
-            Picker("Variant", selection: $model.language) {
-                ForEach(model.languageVariants, id: \.self) { variant in
-                    Text(variant.name).tag(Optional(variant.tag))
+        Menu("Settings") {
+            Picker("Language", selection: $model.language) {
+                Text("System Default").tag(String?.none)
+                ForEach(model.languageChoices, id: \.self) { choice in
+                    Text(choice.name).tag(Optional(choice.tag))
                 }
             }
+            if !model.languageVariants.isEmpty {
+                Picker("Variant", selection: $model.language) {
+                    ForEach(model.languageVariants, id: \.self) { variant in
+                        Text(variant.name).tag(Optional(variant.tag))
+                    }
+                }
+            }
+            Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
+            Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
+            Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
+            Divider()
+            Toggle("Check for Updates Automatically", isOn: $updater.checksAutomatically)
         }
-        Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
-        Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
-        Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
-
-        Divider()
-
         Button("Check for Updates…") { updater.checkForUpdates() }
             .disabled(!updater.canCheckForUpdates)
-        Toggle("Check for Updates Automatically", isOn: $updater.checksAutomatically)
 
         Divider()
 

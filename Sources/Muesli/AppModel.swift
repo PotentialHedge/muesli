@@ -367,6 +367,28 @@ final class AppModel {
         NSWorkspace.shared.open(store.root)
     }
 
+    /// A menu item doesn't wrap, so a long message would stretch the whole menu.
+    /// Keeps the first sentence, cut at a word boundary if that is still too long.
+    static func menuSummary(of message: String, limit: Int = 70) -> String {
+        var summary = message
+        if let end = summary.range(of: ". ") ?? summary.range(of: ": ") {
+            summary = String(summary[..<end.lowerBound])
+        }
+        guard summary.count > limit else { return summary == message ? message : summary + "…" }
+        let cut = summary.prefix(limit)
+        let head = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
+        return head.trimmingCharacters(in: .punctuationCharacters) + "…"
+    }
+
+    func showLastError() {
+        guard let lastError else { return }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Muesli"
+        alert.informativeText = lastError
+        alert.runModal()
+    }
+
     /// Where new meetings go. Offers to move the existing ones along.
     func chooseMeetingsFolder() {
         let panel = NSOpenPanel()
