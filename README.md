@@ -10,6 +10,24 @@ afterwards unless you turn on "Keep Audio After Transcribing".
 On first use, macOS downloads the speech model for your language, and Muesli downloads ~34 MB of
 speaker-diarization models from Hugging Face. After that nothing leaves your Mac.
 
+## Install
+
+Muesli is an early version, so expect rough edges. It needs macOS 26 or later on an Apple Silicon Mac.
+
+1. Download the latest `Muesli-<version>.zip` from
+   [Releases](https://github.com/PotentialHedge/muesli/releases/latest) and open it.
+2. Drag `Muesli.app` into your Applications folder.
+3. Open it. macOS will refuse, because the app isn't signed by Apple. Click **Done**.
+4. Go to **System Settings → Privacy & Security**, scroll down to the message about Muesli, click
+   **Open Anyway**, and confirm.
+5. Muesli appears in the menu bar, not the Dock. Allow microphone and system audio access when asked.
+
+You only need to do steps 3 and 4 once. Later versions install through "Check for Updates…" in the
+Muesli menu.
+
+To uninstall, quit Muesli and delete it from Applications. Your meetings stay in their folder until
+you delete them.
+
 ## Build & run
 
 Requires macOS 26+ and Xcode.
