@@ -17,6 +17,8 @@ import Synchronization
 /// lock-free ring. A queue drains the ring every 50 ms to encode, write to disk and feed the tee.
 /// If that falls so far behind that the ring fills, the lost audio becomes silence (by the rule
 /// above) and `lastError` reports it.
+///
+/// With a speech detector, stretches without speech are written as zeros (see `SpeechGate`).
 public final class TrackWriter: @unchecked Sendable {
     private let file: AVAudioFile
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
@@ -34,6 +36,7 @@ public final class TrackWriter: @unchecked Sendable {
     private let isClosed = Atomic<Bool>(false)
     /// Written to the file in batches, so the tee gets sensible buffers rather than one per slot.
     private var pending: AVAudioPCMBuffer?
+    private let gate: SpeechGate?
     private static let batchFrames: AVAudioFrameCount = 4096
 
     /// Guards the two values below, which the queue updates and anyone may read. Never taken by `write`.
@@ -65,8 +68,9 @@ public final class TrackWriter: @unchecked Sendable {
     /// `tee` receives each mono buffer as it's written (for live transcription); it owns the buffer.
     /// `startSeconds`: where in the track this file starts, if it continues an earlier file
     /// (`endSeconds` of that one). The gap from there to the first buffer becomes silence.
+    /// `speechDetector`: if given, stretches without speech are written as zeros.
     public init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64? = nil, startSeconds: Double = 0,
-                tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+                speechDetector: SpeechDetector? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         guard inputFormat.commonFormat == .pcmFormatFloat32 else {
             throw CocoaError(.featureUnsupported, userInfo: [
                 NSLocalizedDescriptionKey: "Unsupported input format \(inputFormat)",
@@ -76,6 +80,8 @@ public final class TrackWriter: @unchecked Sendable {
         channels = Int(inputFormat.channelCount)
         isInterleaved = inputFormat.isInterleaved
         sampleRate = file.processingFormat.sampleRate
+        let format = file.processingFormat
+        gate = speechDetector.map { SpeechGate(detector: $0, format: format) }
         startFrame = AVAudioFramePosition((startSeconds * sampleRate).rounded())
         self.tee = tee
         self.clockStart = clockStart
@@ -168,7 +174,7 @@ public final class TrackWriter: @unchecked Sendable {
     }
 
     private func add(_ samples: UnsafeBufferPointer<Float>, hostTime: UInt64?) throws {
-        let queued = AVAudioFramePosition(pending?.frameLength ?? 0)
+        let queued = AVAudioFramePosition(pending?.frameLength ?? 0) + (gate?.heldFrames ?? 0)
         if let missing = Self.missingFrames(at: hostTime, clockStart: clockStart, written: startFrame + framesWritten + queued,
                                             sampleRate: sampleRate) {
             try flush()
@@ -192,6 +198,11 @@ public final class TrackWriter: @unchecked Sendable {
     }
 
     private func append(_ mono: AVAudioPCMBuffer) throws {
+        guard let gate else { return try write(mono) }
+        for decided in gate.process(mono) { try write(decided) }
+    }
+
+    private func write(_ mono: AVAudioPCMBuffer) throws {
         try file.write(from: mono)
         lock.withLock { _framesWritten += AVAudioFramePosition(mono.frameLength) }
         tee?(mono)
@@ -225,6 +236,11 @@ public final class TrackWriter: @unchecked Sendable {
         timer.cancel()
         queue.sync {
             drain()
+            do {
+                for decided in gate?.flush() ?? [] { try write(decided) }
+            } catch {
+                lock.withLock { _lastError = _lastError ?? error }
+            }
             if ring.droppedFrames > 0 {
                 lock.withLock { _lastError = _lastError ?? WriteError.droppedFrames(ring.droppedFrames) }
             }

@@ -83,6 +83,7 @@ private struct MenuContent: View {
             }
         }
         Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
+        Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
         Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
 
         Divider()

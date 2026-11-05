@@ -54,6 +54,12 @@ final class AppModel {
     var keepAudio = Settings.keepAudio {
         didSet { Settings.keepAudio = keepAudio }
     }
+    var skipSilence = Settings.skipSilence {
+        didSet {
+            Settings.skipSilence = skipSilence
+            if skipSilence { loadSpeechDetector() }
+        }
+    }
 
     private(set) var store = MeetingStore()
     @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
@@ -65,6 +71,9 @@ final class AppModel {
     @ObservationIgnored private let notifications = NotificationController()
     /// Shared so the CoreML models stay loaded between meetings.
     @ObservationIgnored private let diarizer = FluidDiarizer()
+    /// For `skipSilence`. nil until its model has loaded; until then meetings record everything.
+    @ObservationIgnored private var speechDetector: SpeechDetectorFactory?
+    @ObservationIgnored private var loadingSpeechDetector = false
 
     private static let alwaysRecordKey = "alwaysRecord"
     static let continueWindow: TimeInterval = 5 * 60
@@ -73,6 +82,7 @@ final class AppModel {
         alwaysRecord = Set(UserDefaults.standard.stringArray(forKey: Self.alwaysRecordKey) ?? [])
         notifications.onAction = { [weak self] action in self?.handle(action) }
         notifications.setUp()
+        if skipSilence { loadSpeechDetector() }
         refreshRecentMeetings()
         startPolling()
         Task {
@@ -174,7 +184,9 @@ final class AppModel {
             // Without a transcriber we still record; the final pass will report the problem.
             let transcriber = try? await AppleSpeechTranscriber.make(preferred: language.map(Locale.init(identifier:)))
             do {
-                let session = try RecordingSession(store: store, app: app, transcriber: transcriber)
+                if skipSilence, speechDetector == nil { loadSpeechDetector() }  // for the next meeting
+                let session = try RecordingSession(store: store, app: app, transcriber: transcriber,
+                                                   speechDetector: skipSilence ? speechDetector : nil)
                 try session.start()
                 lastError = session.warnings.first
                 status = .recording(session, following: app)
@@ -183,6 +195,20 @@ final class AppModel {
                 Task { [diarizer] in try? await diarizer.prepare() }
             } catch {
                 lastError = "\(error)"
+            }
+        }
+    }
+
+    /// Fetches the speech detection model (first time only) and keeps it loaded.
+    private func loadSpeechDetector() {
+        guard speechDetector == nil, !loadingSpeechDetector else { return }
+        loadingSpeechDetector = true
+        Task {
+            defer { loadingSpeechDetector = false }
+            do {
+                speechDetector = try await SileroSpeechDetector.load()
+            } catch {
+                lastError = "Couldn't load speech detection, so silence is recorded as usual: \(error)"
             }
         }
     }

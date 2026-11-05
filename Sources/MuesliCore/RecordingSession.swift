@@ -23,15 +23,19 @@ public final class RecordingSession {
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
     private let transcriber: Transcriber?
+    private let speechDetector: SpeechDetectorFactory?
     private let live: LiveTranscript
     private var streams: [Track: TranscriptionStream] = [:]
 
-    public init(store: MeetingStore, app: MeetingApp?, transcriber: Transcriber? = nil, now: Date = .now) throws {
+    /// `speechDetector`: if given, stretches without speech are recorded as silence (see `SpeechGate`).
+    public init(store: MeetingStore, app: MeetingApp?, transcriber: Transcriber? = nil,
+                speechDetector: SpeechDetectorFactory? = nil, now: Date = .now) throws {
         folder = try store.makeMeetingFolder(start: now, appName: app?.name)
         appID = app?.id
         appName = app?.name
         startedAt = now
         self.transcriber = transcriber
+        self.speechDetector = speechDetector
         live = LiveTranscript(
             url: folder.appendingPathComponent(MeetingFiles.transcript),
             metadata: MeetingMetadata(start: now, app: app?.name, status: .recording, language: transcriber?.language)
@@ -49,13 +53,15 @@ public final class RecordingSession {
         let clockStart = mach_absolute_time()
         var failures = 0
         do {
-            try mic.start(url: folder.appendingPathComponent(MeetingFiles.micAudio), clockStart: clockStart, tee: tee(for: .mic))
+            try mic.start(url: folder.appendingPathComponent(MeetingFiles.micAudio), clockStart: clockStart,
+                          speechDetector: speechDetector, tee: tee(for: .mic))
         } catch {
             failures += 1
             warnings.append("Microphone not recording: \(error)")
         }
         do {
-            try system.start(url: folder.appendingPathComponent(MeetingFiles.systemAudio), clockStart: clockStart, tee: tee(for: .system))
+            try system.start(url: folder.appendingPathComponent(MeetingFiles.systemAudio), clockStart: clockStart,
+                             speechDetector: speechDetector, tee: tee(for: .system))
         } catch {
             failures += 1
             warnings.append("System audio not recording: \(error)")

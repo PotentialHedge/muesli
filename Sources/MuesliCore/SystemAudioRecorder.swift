@@ -19,10 +19,12 @@ public final class SystemAudioRecorder {
     public var secondsWritten: Double { track?.seconds ?? 0 }
     public var writeError: Error? { track?.writer.lastError }
 
-    public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    public func start(url: URL, clockStart: UInt64? = nil, speechDetector: SpeechDetectorFactory? = nil,
+                      tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         do {
             let format = try makeTap()
-            let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+            let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart,
+                                       speechDetector: speechDetector, tee: tee)
             self.track = track
             try capture(format: format, into: track.writer)
         } catch {

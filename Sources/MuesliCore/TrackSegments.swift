@@ -66,15 +66,18 @@ public enum TrackSegments {
 final class SegmentedTrack {
     private let first: URL
     private let clockStart: UInt64?
+    private let speechDetector: SpeechDetectorFactory?
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
     private var count = 1
     private(set) var writer: TrackWriter
 
-    init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64?, tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
+    init(url: URL, inputFormat: AVAudioFormat, clockStart: UInt64?, speechDetector: SpeechDetectorFactory? = nil,
+         tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
         first = url
         self.clockStart = clockStart
+        self.speechDetector = speechDetector
         self.tee = tee
-        writer = try TrackWriter(url: url, inputFormat: inputFormat, clockStart: clockStart, tee: tee)
+        writer = try TrackWriter(url: url, inputFormat: inputFormat, clockStart: clockStart, speechDetector: speechDetector?(), tee: tee)
     }
 
     /// The writer to resume capturing into from `format`: the current one, or a new file if the
@@ -86,7 +89,8 @@ final class SegmentedTrack {
         } catch TrackWriter.WriteError.sampleRateChanged {
             writer.close()  // first: it writes out what's queued, so endSeconds is final
             let next = try TrackWriter(url: TrackSegments.segmentURL(first: first, number: count + 1), inputFormat: format,
-                                       clockStart: clockStart, startSeconds: writer.endSeconds, tee: tee)
+                                       clockStart: clockStart, startSeconds: writer.endSeconds,
+                                       speechDetector: speechDetector?(), tee: tee)
             writer = next
             count += 1
             return next

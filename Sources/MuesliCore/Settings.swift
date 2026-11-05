@@ -21,6 +21,13 @@ public enum Settings {
         set { defaults.set(newValue, forKey: "keepAudio") }
     }
 
+    /// Record stretches without speech as silence, so a quiet room takes almost no space.
+    /// Off by default.
+    public static var skipSilence: Bool {
+        get { defaults.bool(forKey: "skipSilence") }
+        set { defaults.set(newValue, forKey: "skipSilence") }
+    }
+
     /// Where meeting folders go. nil = `MeetingStore.defaultRoot` (~/Meetings).
     public static var meetingsFolder: URL? {
         get { defaults.string(forKey: "meetingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) } }

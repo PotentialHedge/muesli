@@ -24,9 +24,11 @@ public final class MicRecorder {
         }
     }
 
-    public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    public func start(url: URL, clockStart: UInt64? = nil, speechDetector: SpeechDetectorFactory? = nil,
+                      tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         let format = try prepareInput()
-        let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+        let track = try SegmentedTrack(url: url, inputFormat: format, clockStart: clockStart,
+                                       speechDetector: speechDetector, tee: tee)
         self.track = track
         try capture(format: format, into: track.writer)
     }
