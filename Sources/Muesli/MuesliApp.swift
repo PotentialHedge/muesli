@@ -83,20 +83,20 @@ private struct MenuContent: View {
 
         Divider()
 
+        Picker("Language", selection: $model.language) {
+            Text("System Default").tag(String?.none)
+            ForEach(model.languageChoices, id: \.self) { choice in
+                Text(choice.name).tag(Optional(choice.tag))
+            }
+        }
+        if !model.languageVariants.isEmpty {
+            Picker("Variant", selection: $model.language) {
+                ForEach(model.languageVariants, id: \.self) { variant in
+                    Text(variant.name).tag(Optional(variant.tag))
+                }
+            }
+        }
         Menu("Settings") {
-            Picker("Language", selection: $model.language) {
-                Text("System Default").tag(String?.none)
-                ForEach(model.languageChoices, id: \.self) { choice in
-                    Text(choice.name).tag(Optional(choice.tag))
-                }
-            }
-            if !model.languageVariants.isEmpty {
-                Picker("Variant", selection: $model.language) {
-                    ForEach(model.languageVariants, id: \.self) { variant in
-                        Text(variant.name).tag(Optional(variant.tag))
-                    }
-                }
-            }
             Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
             Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
             Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
