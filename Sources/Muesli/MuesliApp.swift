@@ -75,6 +75,7 @@ private struct MenuContent: View {
             Section(day.title) {
                 ForEach(day.meetings, id: \.folder) { meeting in
                     Button(meeting.title) { NSWorkspace.shared.open(meeting.folder) }
+                        .badge(meeting.length.map { Text($0) })
                 }
             }
         }

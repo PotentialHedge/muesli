@@ -365,7 +365,14 @@ final class AppModel {
     struct RecentDay: Identifiable {
         var id: String { title }
         let title: String
-        let meetings: [(folder: URL, title: String)]
+        let meetings: [RecentMeeting]
+    }
+
+    struct RecentMeeting {
+        let folder: URL
+        let title: String
+        /// Nil while recording, or if the end wasn't written.
+        let length: String?
     }
 
     /// Recent meetings grouped by the day they started, newest first.
@@ -376,14 +383,24 @@ final class AppModel {
             let folder = URL(fileURLWithPath: meeting.path)
             let day = Self.dayTitle(meeting.start, calendar: calendar)
             let name = MeetingStore.displayName(of: folder, start: meeting.start, calendar: calendar)
-            let title = "\(meeting.start.formatted(date: .omitted, time: .shortened)) · \(name)"
+            let entry = RecentMeeting(
+                folder: folder,
+                title: "\(meeting.start.formatted(date: .omitted, time: .shortened)) · \(name)",
+                length: meeting.end.map { Self.length($0.timeIntervalSince(meeting.start)) }
+            )
             if days.last?.title == day {
-                days[days.count - 1] = RecentDay(title: day, meetings: days[days.count - 1].meetings + [(folder, title)])
+                days[days.count - 1] = RecentDay(title: day, meetings: days[days.count - 1].meetings + [entry])
             } else {
-                days.append(RecentDay(title: day, meetings: [(folder, title)]))
+                days.append(RecentDay(title: day, meetings: [entry]))
             }
         }
         return days
+    }
+
+    /// "45 min", "1 hr, 5 min".
+    static func length(_ seconds: TimeInterval) -> String {
+        guard seconds >= 60 else { return "<1 min" }
+        return Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
     }
 
     private static func dayTitle(_ date: Date, calendar: Calendar) -> String {
