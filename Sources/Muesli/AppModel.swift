@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import MuesliCore
 import Observation
+import os
 
 @MainActor
 @Observable
@@ -42,6 +43,9 @@ final class AppModel {
     let store = MeetingStore()
     @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    /// What the last poll saw, so only changes get logged.
+    @ObservationIgnored private var lastMicUsers: [String] = []
+    @ObservationIgnored private let log = Logger(subsystem: "dev.muesli.Muesli", category: "detection")
     @ObservationIgnored private let notifications = NotificationController()
     /// Shared so the CoreML models stay loaded between meetings.
     @ObservationIgnored private let diarizer = FluidDiarizer()
@@ -75,8 +79,16 @@ final class AppModel {
 
     private func poll() {
         let processes = (try? AudioProcesses.usingMicrophone()) ?? []
+        // Persisted (notice level) so a meeting that didn't start or stop can be explained afterwards:
+        // log show --last 1d --predicate 'subsystem == "dev.muesli.Muesli"'
+        let micUsers = processes.map { "\($0.bundleID) (\($0.pid))" }.sorted()
+        if micUsers != lastMicUsers {
+            lastMicUsers = micUsers
+            log.notice("Mic users: \(micUsers.isEmpty ? "none" : micUsers.joined(separator: ", "), privacy: .public)")
+        }
         let apps = MeetingApps.active(in: processes)
         for event in detector.update(activeApps: apps, now: .now) {
+            log.notice("Detector: \(String(describing: event), privacy: .public)")
             handle(event)
         }
     }
@@ -152,6 +164,7 @@ final class AppModel {
 
     func stopRecording() {
         guard case .recording(let session) = status else { return }
+        log.notice("Stopping recording of \(session.folder.lastPathComponent, privacy: .public)")
         session.stop()
         lastError = session.warnings.last
         status = .idle
