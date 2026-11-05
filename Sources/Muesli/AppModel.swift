@@ -373,12 +373,16 @@ final class AppModel {
         let title: String
         /// Nil while recording, or if the end wasn't written.
         let length: String?
+        /// Being recorded right now.
+        let isOngoing: Bool
     }
 
     /// Recent meetings grouped by the day they started, newest first.
     var recentDays: [RecentDay] {
         let calendar = Calendar.current
         var days: [RecentDay] = []
+        var recordingPath: String?
+        if case .recording(let session, _) = status { recordingPath = session.folder.standardizedFileURL.resolvingSymlinksInPath().path }
         for meeting in recentMeetings {
             let folder = URL(fileURLWithPath: meeting.path)
             let day = Self.dayTitle(meeting.start, calendar: calendar)
@@ -386,7 +390,8 @@ final class AppModel {
             let entry = RecentMeeting(
                 folder: folder,
                 title: "\(meeting.start.formatted(date: .omitted, time: .shortened)) · \(name)",
-                length: meeting.end.map { Self.length($0.timeIntervalSince(meeting.start)) }
+                length: meeting.end.map { Self.length($0.timeIntervalSince(meeting.start)) },
+                isOngoing: folder.standardizedFileURL.resolvingSymlinksInPath().path == recordingPath
             )
             if days.last?.title == day {
                 days[days.count - 1] = RecentDay(title: day, meetings: days[days.count - 1].meetings + [entry])

@@ -10,6 +10,7 @@ struct MuesliApp: App {
         let model = AppModel()
         _model = State(initialValue: model)
         _updater = State(initialValue: Updater { model.isBusy })
+        OngoingPill.install()
     }
 
     var body: some Scene {
@@ -75,7 +76,7 @@ private struct MenuContent: View {
             Section(day.title) {
                 ForEach(day.meetings, id: \.folder) { meeting in
                     Button(meeting.title) { NSWorkspace.shared.open(meeting.folder) }
-                        .badge(meeting.length.map { Text($0) })
+                        .badge(meeting.isOngoing ? Text(OngoingPill.label) : meeting.length.map { Text($0) })
                 }
             }
         }
@@ -111,5 +112,56 @@ private struct MenuContent: View {
 
         Button("Quit Muesli") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
+    }
+}
+
+/// NSMenu draws `.badge` as a gray pill and can't color it. When a menu opens, the "Ongoing" badge
+/// is swapped for a red pill drawn at the end of the item's title.
+@MainActor
+enum OngoingPill {
+    static let label = "Ongoing"
+    private static var observer: NSObjectProtocol?
+
+    static func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+        ) { note in
+            // Posted on the main thread (queue: .main), where the menu lives.
+            nonisolated(unsafe) let menu = note.object as? NSMenu
+            MainActor.assumeIsolated {
+                if let menu { restyle(menu) }
+            }
+        }
+    }
+
+    private static func restyle(_ menu: NSMenu) {
+        let font = menu.font ?? NSFont.menuFont(ofSize: 0)
+        for item in menu.items where item.badge?.stringValue == label {
+            let title = NSMutableAttributedString(string: item.title + "  ", attributes: [.font: font])
+            title.append(NSAttributedString(attachment: pill(font: font)))
+            item.badge = nil
+            item.attributedTitle = title
+        }
+    }
+
+    private static func pill(font: NSFont) -> NSTextAttachment {
+        let text = NSAttributedString(string: label, attributes: [
+            .font: NSFont.systemFont(ofSize: font.pointSize - 2, weight: .semibold),
+            .foregroundColor: NSColor.white,
+        ])
+        let textSize = text.size()
+        let size = NSSize(width: ceil(textSize.width) + 12, height: ceil(textSize.height) + 2)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.systemRed.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+            text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2, y: (rect.height - textSize.height) / 2))
+            return true
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        // Centre the pill on the title's capitals.
+        attachment.bounds = NSRect(x: 0, y: (font.capHeight - size.height) / 2, width: size.width, height: size.height)
+        return attachment
     }
 }
