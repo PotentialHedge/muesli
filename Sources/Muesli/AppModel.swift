@@ -32,6 +32,8 @@ final class AppModel {
     private(set) var recentMeetings: [URL] = []
     /// Bundle IDs of apps the user wants recorded without asking.
     private(set) var alwaysRecord: Set<String>
+    /// How many meetings are being moved to a newly chosen folder.
+    private(set) var movingMeetings: Int?
     /// Meeting folders whose final pass (transcription, speaker ID) is running.
     private(set) var processing: Set<URL> = []
     /// Transcription languages this Mac supports (loaded at launch).
@@ -333,7 +335,7 @@ final class AppModel {
         NSWorkspace.shared.open(store.root)
     }
 
-    /// Where new meetings go. Existing meetings stay where they are.
+    /// Where new meetings go. Offers to move the existing ones along.
     func chooseMeetingsFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -342,23 +344,87 @@ final class AppModel {
         panel.allowsMultipleSelection = false
         panel.directoryURL = store.root
         panel.prompt = "Choose"
-        panel.message = "New meetings will be saved here. Existing meetings stay where they are."
+        panel.message = "Choose where Muesli saves meetings."
         // A menu bar app isn't frontmost, so the panel would open behind other windows.
         NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        setMeetingsFolder(url)
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL,
+              Self.samePath(url, store.root) == false else { return }
+
+        let old = store
+        // A meeting folder can't go inside itself.
+        let movable = old.allMeetings().filter { !Self.path(url).hasPrefix(Self.path($0) + "/") }
+        guard !movable.isEmpty else { return setMeetingsFolder(url) }
+
+        let alert = NSAlert()
+        let count = movable.count == 1 ? "your meeting" : "your \(movable.count) meetings"
+        alert.messageText = "Move \(count) to “\(url.lastPathComponent)”?"
+        alert.informativeText = """
+            They're in \(meetingsFolderName). If you leave them there, Muesli and your agents won't \
+            see them any more.
+            """
+        alert.addButton(withTitle: "Move Meetings")
+        alert.addButton(withTitle: "Leave Them")
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            setMeetingsFolder(url)
+            moveMeetings(movable, from: old)
+        case .alertSecondButtonReturn:
+            setMeetingsFolder(url)
+        default:
+            return
+        }
     }
 
     func setMeetingsFolder(_ url: URL) {
         let url = url.standardizedFileURL
-        Settings.meetingsFolder = url == MeetingStore.defaultRoot.standardizedFileURL ? nil : url
+        Settings.meetingsFolder = Self.samePath(url, MeetingStore.defaultRoot) ? nil : url
         store = MeetingStore(root: url)
         refreshRecentMeetings()
     }
 
+    /// Moves meetings into the current folder in the background. Ones still being recorded,
+    /// waiting to be continued or being transcribed are left behind: something is writing to them.
+    private func moveMeetings(_ meetings: [URL], from old: MeetingStore) {
+        var busy = Set(processing.map(Self.path))
+        if case .recording(let session, _) = status { busy.insert(Self.path(session.folder)) }
+        if let ended { busy.insert(Self.path(ended.session.folder)) }
+        let toMove = meetings.filter { !busy.contains(Self.path($0)) }
+        let leftBehind = meetings.count - toMove.count
+        let (oldName, new) = (meetingsFolderName(old.root), store)
+
+        movingMeetings = toMove.count
+        Task {
+            let result = await Task.detached { old.move(toMove, to: new) }.value
+            movingMeetings = nil
+            refreshRecentMeetings()
+            var problems: [String] = []
+            if !result.failed.isEmpty {
+                let first = result.failed[0]
+                problems.append("Couldn't move \(result.failed.count) meeting(s), e.g. \(first.folder.lastPathComponent): \(first.reason)")
+            }
+            if leftBehind > 0 {
+                problems.append("Left \(leftBehind) meeting(s) in \(oldName) that were still in use; move them by hand later.")
+            }
+            if !problems.isEmpty { lastError = problems.joined(separator: " ") }
+        }
+    }
+
+    private static func path(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private static func samePath(_ a: URL, _ b: URL) -> Bool {
+        path(a) == path(b)
+    }
+
+    private func meetingsFolderName(_ url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+
     /// The meetings folder for the menu, with the home directory as ~.
     var meetingsFolderName: String {
-        (store.root.path as NSString).abbreviatingWithTildeInPath
+        meetingsFolderName(store.root)
     }
 
     func copyAgentPrompt() {
@@ -382,6 +448,11 @@ final class AppModel {
         guard let ended else { return nil }
         let until = ended.finishesAt.formatted(date: .omitted, time: .shortened)
         return "\(Self.title(of: ended.session)) ended; can be continued until \(until)"
+    }
+
+    /// Shown while meetings move to a newly chosen folder.
+    var movingText: String? {
+        movingMeetings.map { $0 == 1 ? "Moving 1 meeting…" : "Moving \($0) meetings…" }
     }
 
     /// Shown under the main status line while a final pass runs (it can overlap a new recording).

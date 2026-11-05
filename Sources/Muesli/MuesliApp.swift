@@ -26,6 +26,9 @@ private struct MenuContent: View {
         if let processing = model.processingText {
             Text(processing)
         }
+        if let moving = model.movingText {
+            Text(moving)
+        }
 
         switch model.status {
         case .idle:

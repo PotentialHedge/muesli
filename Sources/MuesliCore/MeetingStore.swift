@@ -51,25 +51,81 @@ public struct MeetingStore: Sendable {
 
     /// Most recent meeting folders first. Names start with a timestamp, so name order is time order.
     public func recentMeetings(limit: Int = 10) -> [URL] {
-        func subdirectories(_ url: URL) -> [URL] {
-            let items = (try? FileManager.default.contentsOfDirectory(
-                at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-            )) ?? []
-            return items
-                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-                .sorted { $0.lastPathComponent > $1.lastPathComponent }
-        }
-
         var result: [URL] = []
-        for year in subdirectories(root) {
-            for month in subdirectories(year) {
-                for meeting in subdirectories(month) {
+        for year in Self.subdirectories(root, digits: 4) {
+            for month in Self.subdirectories(year, digits: 2) {
+                for meeting in Self.subdirectories(month) {
                     result.append(meeting)
                     if result.count >= limit { return result }
                 }
             }
         }
         return result
+    }
+
+    /// Every meeting folder, most recent first.
+    public func allMeetings() -> [URL] {
+        recentMeetings(limit: .max)
+    }
+
+    public struct MoveResult: Sendable {
+        public var moved = 0
+        /// Folders that couldn't be moved, with the reason.
+        public var failed: [(folder: URL, reason: String)] = []
+    }
+
+    /// Moves meeting folders into `destination`, keeping their `year/month/` path. A name that's
+    /// already taken there gets " (2)", " (3)"... Emptied year and month folders are removed.
+    public func move(_ meetings: [URL], to destination: MeetingStore) -> MoveResult {
+        let fm = FileManager.default
+        var result = MoveResult()
+        for folder in meetings {
+            let month = folder.deletingLastPathComponent()
+            let year = month.deletingLastPathComponent()
+            let targetMonth = destination.root
+                .appendingPathComponent(year.lastPathComponent, isDirectory: true)
+                .appendingPathComponent(month.lastPathComponent, isDirectory: true)
+            do {
+                try fm.createDirectory(at: targetMonth, withIntermediateDirectories: true)
+                let base = folder.lastPathComponent
+                var target = targetMonth.appendingPathComponent(base, isDirectory: true)
+                var n = 2
+                while fm.fileExists(atPath: target.path) {
+                    target = targetMonth.appendingPathComponent("\(base) (\(n))", isDirectory: true)
+                    n += 1
+                }
+                try fm.moveItem(at: folder, to: target)
+                result.moved += 1
+            } catch {
+                result.failed.append((folder, error.localizedDescription))
+            }
+            for dir in [month, year] where Self.subdirectories(dir).isEmpty && Self.isEmpty(dir) {
+                try? fm.removeItem(at: dir)
+            }
+        }
+        return result
+    }
+
+    /// Subfolders, newest name first. `digits` keeps only all-digit names of that length
+    /// (year and month folders), so other things in the root aren't taken for meetings.
+    private static func subdirectories(_ url: URL, digits: Int? = nil) -> [URL] {
+        let items = (try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )) ?? []
+        return items
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .filter { url in
+                guard let digits else { return true }
+                let name = url.lastPathComponent
+                return name.count == digits && name.allSatisfy(\.isASCII) && name.allSatisfy(\.isNumber)
+            }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    /// Nothing but hidden files (like .DS_Store) left.
+    private static func isEmpty(_ url: URL) -> Bool {
+        let items = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        return items?.isEmpty == true
     }
 
     private static func sanitize(_ name: String) -> String {
