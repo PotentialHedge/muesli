@@ -7,6 +7,7 @@ public enum MeetingFiles {
     /// Voice embeddings per speaker, for recognising recurring speakers later.
     public static let speakers = "speakers.json"
     public static let audio = "audio"
+    /// The first file of each track; a continued meeting can add `mic-2.caf` etc. (see `TrackSegments`).
     public static let micAudio = "audio/mic.caf"
     public static let systemAudio = "audio/system.caf"
 }
@@ -45,9 +46,13 @@ public struct MeetingProcessor: Sendable {
         try write(metadata: metadata, body: Self.body(of: mdURL), to: mdURL)
 
         do {
-            let micURL = folder.appendingPathComponent(MeetingFiles.micAudio)
-            let systemURL = folder.appendingPathComponent(MeetingFiles.systemAudio)
             let fm = FileManager.default
+            // A track in several files (a continued meeting whose device changed) is joined into one.
+            let micTrack = try TrackSegments.single(first: folder.appendingPathComponent(MeetingFiles.micAudio))
+            defer { if micTrack.isTemporary { try? fm.removeItem(at: micTrack.url) } }
+            let systemTrack = try TrackSegments.single(first: folder.appendingPathComponent(MeetingFiles.systemAudio))
+            defer { if systemTrack.isTemporary { try? fm.removeItem(at: systemTrack.url) } }
+            let (micURL, systemURL) = (micTrack.url, systemTrack.url)
 
             async let micPhrases = phrases(for: .mic, url: micURL, live: live[.mic], log: log)
             async let systemPhrases = phrases(for: .system, url: systemURL, live: live[.system], log: log)

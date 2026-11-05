@@ -89,9 +89,9 @@ final class SegmentedTrack {
             try writer.setInput(format)
             return writer
         } catch TrackWriter.WriteError.sampleRateChanged {
+            writer.close()  // first: it writes out what's queued, so endSeconds is final
             let next = try TrackWriter(url: TrackSegments.segmentURL(first: first, number: count + 1), inputFormat: format,
                                        clockStart: clockStart, startSeconds: writer.endSeconds, tee: tee)
-            writer.close()
             writer = next
             count += 1
             return next

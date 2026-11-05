@@ -24,7 +24,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 | Track alignment | Both tracks are written against one host clock; gaps (the system tap delivers nothing while the output device is idle) are filled with silence, so t seconds into each file is the same moment |
 | Meeting detection | Per-process mic usage (Core Audio). No calendar access |
 | Start behaviour | Notification with one-click "Record"; per-app "always record" setting. The menu can always start a recording, and while recording, "Start New Meeting" ends it and starts the next |
-| Stop behaviour | Mic released for ~20 s → capture pauses (mic and tap released, files kept open). If another meeting starts within 5 min, the notification and the menu offer to continue the paused meeting (the gap becomes silence, so times keep counting from its start) or record a new one; "always record" apps ask instead of starting, and record anew if nobody answers. After 5 min, or when a new recording starts, the paused meeting finishes and the final pass runs. Stopping by hand finishes at once. Continuing needs the mic at the same sample rate; if it changed, a new meeting starts instead |
+| Stop behaviour | Mic released for ~20 s → capture pauses (mic and tap released, files kept open). If another meeting starts within 5 min, the notification and the menu offer to continue the paused meeting (the gap becomes silence, so times keep counting from its start) or record a new one; "always record" apps ask instead of starting, and record anew if nobody answers. After 5 min, or when a new recording starts, the paused meeting finishes and the final pass runs. Stopping by hand finishes at once. If a device now runs at another sample rate (e.g. AirPods instead of the built-in mic), that track continues in a second file (`mic-2.caf`) that starts where the first ended; the final pass joins a track's files into one temporary file, so diarization sees the whole meeting |
 | Audio retention | Optional, **off by default** (transcript only): `audio/` is deleted after a successful final pass. "Keep Audio After Transcribing" in the menu keeps it |
 | Pipeline | Each track is transcribed live as it's recorded; `transcript.md` grows during the meeting (remote speech labelled "Others"). At the end, the final pass diarizes the system track and rewrites `transcript.md` + `transcript.json` with speakers. If live transcription of a track failed, the final pass transcribes its file instead |
 | Crash safety | Audio is CAF (readable without finalising) and is only deleted after success. Frontmatter `status` tracks progress (`recording → recorded → transcribing → done`, or `failed` + `error`); at launch, unfinished meetings that still have audio are processed. Failed ones aren't retried automatically (`muesli transcribe` re-runs) |
@@ -45,6 +45,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
       notes.md                   # optional scratchpad (not yet)
       audio/mic.caf              # mono AAC 48 kHz; only kept if retention is enabled
       audio/system.caf
+                                 # (+ mic-2.caf etc. if a continued meeting changed device)
 ```
 
 `transcript.md`, one paragraph per turn (consecutive segments of one speaker are joined unless

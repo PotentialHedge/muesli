@@ -178,3 +178,63 @@ import Testing
         #expect(received.withLock { $0 } == [0.5, 0.5, 0.5, 0.5])
     }
 }
+
+@Suite struct TrackSegmentsTests {
+    func mono(rate: Double, seconds: Double, value: Float) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false)!
+        let frames = AVAudioFrameCount(rate * seconds)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        buffer.floatChannelData![0].update(repeating: value, count: Int(frames))
+        return buffer
+    }
+
+    @Test func resumingAtAnotherRateContinuesInANewFileThatJoinsUp() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = folder.appendingPathComponent("mic.caf")
+        let start: UInt64 = 1_000
+        let at = { (seconds: Double) in start + AudioConvertNanosToHostTime(UInt64(seconds * 1e9)) }
+
+        let fast = mono(rate: 48_000, seconds: 1, value: 0.5)
+        let track = try SegmentedTrack(url: first, inputFormat: fast.format, clockStart: start, tee: nil)
+        track.writer.write(fast, hostTime: start)
+        #expect(try track.writer(resumingWith: fast.format) === track.writer)  // same rate: same file
+
+        // Paused at 1 s, resumed at 3 s on a 24 kHz device.
+        let slow = mono(rate: 24_000, seconds: 1, value: 0.5)
+        let second = try track.writer(resumingWith: slow.format)
+        second.write(slow, hostTime: at(3))
+        track.close()
+
+        let urls = TrackSegments.urls(first: first)
+        #expect(urls.map(\.lastPathComponent) == ["mic.caf", "mic-2.caf"])
+        #expect(abs(track.seconds - 4) < 0.01)
+        #expect(try AVAudioFile(forReading: urls[1]).length == 3 * 24_000)  // 2 s of pause + 1 s
+
+        let joined = try TrackSegments.single(first: first)
+        defer { try? FileManager.default.removeItem(at: joined.url) }
+        #expect(joined.isTemporary)
+        let file = try AVAudioFile(forReading: joined.url)
+        #expect(file.processingFormat.sampleRate == 48_000)
+        #expect(abs(Double(file.length) / 48_000 - 4) < 0.1)
+
+        // The pause is silence, and the second recording lands at 3 s.
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: buffer)
+        let samples = buffer.floatChannelData![0]
+        #expect(abs(samples[48_000 * 2]) < 0.05)
+        #expect(abs(samples[Int(48_000 * 3.5)] - 0.5) < 0.1)
+    }
+
+    @Test func aSingleFileIsUsedAsIs() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-\(UUID().uuidString).caf")
+        let writer = try TrackWriter(url: url, inputFormat: mono(rate: 48_000, seconds: 0, value: 0).format)
+        writer.close()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let single = try TrackSegments.single(first: url)
+        #expect(single.url == url && !single.isTemporary)
+        #expect(TrackSegments.urls(first: url.deletingLastPathComponent().appendingPathComponent("missing.caf")).isEmpty)
+    }
+}
