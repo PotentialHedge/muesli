@@ -72,12 +72,7 @@ public final class TrackWriter: @unchecked Sendable {
                 NSLocalizedDescriptionKey: "Unsupported input format \(inputFormat)",
             ])
         }
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: inputFormat.sampleRate,
-            AVNumberOfChannelsKey: 1,
-        ]
-        file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        file = try Self.makeFile(url: url, sampleRate: inputFormat.sampleRate)
         channels = Int(inputFormat.channelCount)
         isInterleaved = inputFormat.isInterleaved
         sampleRate = file.processingFormat.sampleRate
@@ -92,6 +87,25 @@ public final class TrackWriter: @unchecked Sendable {
 
     deinit {
         timer.cancel()
+    }
+
+    /// A mono AAC file at 32 kbps: plenty for speech, which transcription and diarization see at
+    /// 16 kHz. The encoder's default (~64 kbps) doubles the size for nothing. 32 kbps is the lowest
+    /// it accepts for mono at 48 kHz, but too much at 8 kHz (narrowband Bluetooth headsets), so
+    /// the encoder picks the bitrate if it refuses ours.
+    static func makeFile(url: URL, sampleRate: Double) throws -> AVAudioFile {
+        var settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 32_000,
+        ]
+        do {
+            return try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        } catch {
+            settings[AVEncoderBitRateKey] = nil
+            return try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        }
     }
 
     /// For resuming a paused track from a newly started capture, whose device may have a different

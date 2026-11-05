@@ -77,6 +77,30 @@ import Testing
         #expect(abs(Double(file.length) / file.fileFormat.sampleRate - writer.secondsWritten) < 0.1)
     }
 
+    /// 32 kbps where the encoder takes it; at 8 kHz it doesn't, and the file must still work.
+    @Test(arguments: [8_000.0, 16_000, 24_000, 44_100, 48_000])
+    func encodesSpeechAt32kbps(sampleRate: Double) throws {
+        let url = url()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let file = try TrackWriter.makeFile(url: url, sampleRate: sampleRate)
+        let seconds = 30  // long enough that the container's fixed overhead doesn't count
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(sampleRate))!
+        buffer.frameLength = buffer.frameCapacity
+        var rng = SystemRandomNumberGenerator()
+        for _ in 0..<seconds {
+            // Noise: the worst case for the encoder (~72 kbps at the default bitrate).
+            for i in 0..<Int(buffer.frameLength) { buffer.floatChannelData![0][i] = Float.random(in: -0.3...0.3, using: &rng) }
+            try file.write(from: buffer)
+        }
+        file.close()
+
+        let read = try AVAudioFile(forReading: url)
+        #expect(abs(Double(read.length) / sampleRate - Double(seconds)) < 0.1)
+        let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as! Int
+        let kbps = Double(size * 8) / Double(seconds) / 1000
+        if sampleRate >= 16_000 { #expect(kbps < 45, "\(kbps) kbps") }
+    }
+
     @Test func teeGetsMonoAudioInOrderAndInBatches() throws {
         let url = url()
         defer { try? FileManager.default.removeItem(at: url) }

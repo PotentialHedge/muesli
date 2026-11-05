@@ -44,12 +44,7 @@ public enum TrackSegments {
     static func join(_ urls: [URL], to output: URL) throws {
         let firstFile = try AVAudioFile(forReading: urls[0])
         let format = firstFile.processingFormat
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: format.sampleRate,
-            AVNumberOfChannelsKey: 1,
-        ]
-        let out = try AVAudioFile(forWriting: output, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let out = try TrackWriter.makeFile(url: output, sampleRate: format.sampleRate)
         for url in urls {
             let file = url == urls[0] ? firstFile : try AVAudioFile(forReading: url)
             let converter = Converter(to: format)  // mono → mono; passes matching formats through

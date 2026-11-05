@@ -43,7 +43,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
       transcript.json            # segments: start, end, speaker, track, text, confidence
       speakers.json              # voice embedding per diarized speaker (for recognising people later)
       notes.md                   # optional scratchpad (not yet)
-      audio/mic.caf              # mono AAC 48 kHz; only kept if retention is enabled
+      audio/mic.caf              # mono AAC 32 kbps at the device's rate; only kept if retention is enabled
       audio/system.caf
                                  # (+ mic-2.caf etc. if a continued meeting changed device)
 ```
