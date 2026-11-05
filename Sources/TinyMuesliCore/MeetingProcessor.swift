@@ -16,7 +16,7 @@ public enum MeetingFiles {
 /// diarize the system track, merge both tracks, write `transcript.md` + `transcript.json`,
 /// and delete the audio unless it should be kept.
 ///
-/// It only needs the folder, so it doubles as crash recovery and as `muesli transcribe`.
+/// It only needs the folder, so it doubles as crash recovery and as `tinymuesli transcribe`.
 public struct MeetingProcessor: Sendable {
     public var transcriber: Transcriber
     public var diarizer: Diarizer?

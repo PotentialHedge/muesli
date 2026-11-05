@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 private let zoom = MeetingApps.match(bundleID: "us.zoom.xos")!
 private let chrome = MeetingApps.match(bundleID: "com.google.Chrome")!

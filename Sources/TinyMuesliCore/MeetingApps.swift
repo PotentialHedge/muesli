@@ -33,7 +33,7 @@ public struct MeetingApp: Sendable, Hashable, Identifiable {
 }
 
 public enum MeetingApps {
-    /// Verify new entries with `Muesli mic-users` while the app is in a call.
+    /// Verify new entries with `tinyMuesli mic-users` while the app is in a call.
     public static let known: [MeetingApp] = [
         MeetingApp(id: "us.zoom.xos", name: "Zoom", kind: .native, bundleIDs: ["us.zoom"]),
         MeetingApp(id: "com.microsoft.teams2", name: "Teams", kind: .native,

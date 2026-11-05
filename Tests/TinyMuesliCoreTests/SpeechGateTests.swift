@@ -1,7 +1,7 @@
 import AVFAudio
 import Foundation
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 /// "Speech" is anything louder than 0.25.
 final class LoudnessDetector: SpeechDetector {
@@ -85,7 +85,7 @@ final class LoudnessDetector: SpeechDetector {
     }
 
     @Test func writerKeepsTrackLengthAndAlignmentWithAGate() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-gate-\(UUID().uuidString).caf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tinymuesli-gate-\(UUID().uuidString).caf")
         defer { try? FileManager.default.removeItem(at: url) }
         let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800)!

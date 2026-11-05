@@ -1,23 +1,23 @@
 import Foundation
 
-/// A prompt to paste into a coding agent, telling it how to install Muesli's MCP server and how
+/// A prompt to paste into a coding agent, telling it how to install tinyMuesli's MCP server and how
 /// to use it. `binaryPath` is the running binary, so the prompt works wherever the app lives.
 public enum AgentPrompt {
     public static func text(binaryPath: String) -> String {
         """
-        Set up Muesli's MCP server for me, then use it whenever I ask about my meetings. Muesli records \
+        Set up tinyMuesli's MCP server for me, then use it whenever I ask about my meetings. tinyMuesli records \
         and transcribes my meetings locally on this Mac. The server is read-only and runs over stdio.
 
         ## Install
 
-        Add a stdio MCP server named "muesli" to your own configuration, available in all my projects:
+        Add a stdio MCP server named "tinymuesli" to your own configuration, available in all my projects:
 
         - Command: \(binaryPath)
         - Arguments: mcp
 
         If you are Claude Code, run:
 
-            claude mcp add --scope user muesli -- \(shellQuoted(binaryPath)) mcp
+            claude mcp add --scope user tinymuesli -- \(shellQuoted(binaryPath)) mcp
 
         Any other client takes this in its MCP configuration, usually under "mcpServers":
 
@@ -54,7 +54,7 @@ public enum AgentPrompt {
     }
 
     private static func jsonConfig(binaryPath: String) -> String {
-        let config = ["mcpServers": ["muesli": ["command": binaryPath, "args": ["mcp"]] as [String: Any]]]
+        let config = ["mcpServers": ["tinymuesli": ["command": binaryPath, "args": ["mcp"]] as [String: Any]]]
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys, .withoutEscapingSlashes]) else {
             return ""
         }

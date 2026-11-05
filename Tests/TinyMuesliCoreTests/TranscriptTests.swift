@@ -2,7 +2,7 @@
 import CoreAudio
 import Foundation
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 /// Builds a phrase whose words are spaced 0.5 s apart starting at `start`.
 private func phrase(_ text: String, at start: Double, step: Double = 0.5) -> Phrase {
@@ -177,7 +177,7 @@ private struct FakeDiarizer: Diarizer {
     /// A meeting folder with a frontmatter-only transcript and two short silent tracks.
     private func makeFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("muesli-test-\(UUID().uuidString)")
+            .appendingPathComponent("tinymuesli-test-\(UUID().uuidString)")
             .appendingPathComponent("2026-11-04 1030 Zoom")
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("audio"), withIntermediateDirectories: true)
         let meta = MeetingMetadata(start: .now, end: .now + 60, app: "Zoom", status: .recorded)

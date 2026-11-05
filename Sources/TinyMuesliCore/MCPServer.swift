@@ -83,7 +83,7 @@ public final class MCPServer {
             return [
                 "protocolVersion": Self.protocolVersions.contains(requested) ? requested : Self.protocolVersions[0],
                 "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": "muesli", "version": version],
+                "serverInfo": ["name": "tinymuesli", "version": version],
             ]
         case "ping":
             return [:]

@@ -3,11 +3,28 @@ import Foundation
 /// User preferences shared by the app and the CLI. Stored under the app's bundle id, so the CLI
 /// sees the same values even when run outside the app bundle.
 public enum Settings {
-    static let bundleID = "dev.muesli.Muesli"
+    static let bundleID = "com.tinymuesli.tinyMuesli"
     /// Inside the bundle that domain is `.standard` (a suite named after your own bundle id doesn't work).
     nonisolated(unsafe) static let defaults = Bundle.main.bundleIdentifier == bundleID
         ? .standard
         : UserDefaults(suiteName: bundleID) ?? .standard
+
+    /// The app was called Muesli up to 0.1.2. Copies its preferences (meetings folder, language,
+    /// always-record apps, update settings) and copies its hook folder, once, the first time
+    /// tinyMuesli runs. Leaves anything tinyMuesli already has alone.
+    public static func migrateFromMuesli() {
+        let oldBundleID = "dev.muesli.Muesli"
+        if UserDefaults.standard.persistentDomain(forName: bundleID)?.isEmpty ?? true,
+           let old = UserDefaults.standard.persistentDomain(forName: oldBundleID), !old.isEmpty {
+            UserDefaults.standard.setPersistentDomain(old, forName: bundleID)
+            CFPreferencesAppSynchronize(bundleID as CFString)
+        }
+        let config = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        let (oldHooks, newHooks) = (config.appendingPathComponent("muesli"), config.appendingPathComponent("tinymuesli"))
+        if !FileManager.default.fileExists(atPath: newHooks.path) {
+            try? FileManager.default.copyItem(at: oldHooks, to: newHooks)
+        }
+    }
 
     /// Transcription language. nil = the system language (or the closest supported one).
     public static var language: Locale? {

@@ -1,8 +1,8 @@
 import AppKit
-import MuesliCore
+import TinyMuesliCore
 import SwiftUI
 
-struct MuesliApp: App {
+struct TinyMuesliApp: App {
     @State private var model: AppModel
     @State private var updater: Updater
 
@@ -110,7 +110,7 @@ private struct MenuContent: View {
 
         Divider()
 
-        Button("Quit Muesli") { NSApplication.shared.terminate(nil) }
+        Button("Quit tinyMuesli") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
     }
 }

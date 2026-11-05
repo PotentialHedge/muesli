@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tinyMuesli: private meeting notes for your Mac</title>
+<meta name="description" content="tinyMuesli records and transcribes your meetings fully on your Mac. Plain files, no cloud, free and open source.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥣</text></svg>">
+<style>
+  :root {
+    --bg: #fbf8f3; --fg: #24201b; --muted: #6d655b; --line: #e6dfd4;
+    --accent: #b5562b; --accent-fg: #fff; --card: #fff;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #171512; --fg: #ece6dc; --muted: #a39a8e; --line: #2e2a24;
+            --accent: #e0814f; --accent-fg: #171512; --card: #1f1c18; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+  main { max-width: 44rem; margin: 0 auto; padding: 4rem 1.25rem 3rem; }
+  h1 { font-size: clamp(2.4rem, 7vw, 3.4rem); line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 1rem; }
+  h1 span { color: var(--accent); }
+  .lede { font-size: 1.25rem; color: var(--muted); margin: 0 0 2rem; max-width: 34rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: .75rem; }
+  .button { display: inline-block; padding: .7rem 1.2rem; border-radius: .6rem; font-weight: 600;
+            text-decoration: none; background: var(--accent); color: var(--accent-fg); }
+  .button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  .note { font-size: .9rem; color: var(--muted); margin: 0 0 3.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; margin-bottom: 3.5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: .8rem; padding: 1.1rem 1.2rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 .3rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .95rem; }
+  h3 { font-size: 1.1rem; margin: 0 0 .6rem; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: .8rem; padding: 1rem 1.2rem;
+        overflow-x: auto; font: 13.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; margin: 0 0 3.5rem; }
+  footer { border-top: 1px solid var(--line); padding-top: 1.25rem; font-size: .9rem; color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>tiny<span>Muesli</span></h1>
+  <p class="lede">Takes notes in your meetings so you remember them. It records and transcribes everything on your Mac, and nothing leaves it.</p>
+
+  <div class="cta">
+    <a class="button" href="https://github.com/PotentialHedge/tinymuesli/releases/latest">Download for macOS</a>
+    <a class="button secondary" href="https://github.com/PotentialHedge/tinymuesli">Source on GitHub</a>
+  </div>
+  <p class="note">Free and open source. Needs macOS 26 on an Apple Silicon Mac. Early version, so expect rough edges.</p>
+
+  <div class="grid">
+    <div class="card"><h2>Notices your meetings</h2><p>When Zoom, Teams, Slack, FaceTime or a call in your browser uses the mic, one click starts recording. No calendar access needed.</p></div>
+    <div class="card"><h2>Knows who said what</h2><p>You on the mic and everyone else on system audio, with on-device speaker identification at the end.</p></div>
+    <div class="card"><h2>Fully local</h2><p>Apple's on-device speech recognition. Audio is deleted after transcribing unless you keep it.</p></div>
+    <div class="card"><h2>Plain files</h2><p>Each meeting is a folder with <code>transcript.md</code> and <code>transcript.json</code>. Your files, your tools.</p></div>
+  </div>
+
+  <h3>Works with your agent</h3>
+  <pre>claude mcp add --scope user tinymuesli -- \
+  /Applications/tinyMuesli.app/Contents/MacOS/tinyMuesli mcp</pre>
+
+  <footer>tinyMuesli is a menu bar app. Updates install from the app's menu.</footer>
+</main>
+</body>
+</html>

@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Muesli</string>
+	<string>tinyMuesli</string>
 	<key>CFBundleExecutable</key>
-	<string>Muesli</string>
+	<string>tinyMuesli</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.muesli.Muesli</string>
+	<string>com.tinymuesli.tinyMuesli</string>
 	<key>CFBundleName</key>
-	<string>Muesli</string>
+	<string>tinyMuesli</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,11 +21,11 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Muesli records the other participants in your meeting. Audio never leaves your Mac.</string>
+	<string>tinyMuesli records the other participants in your meeting. Audio never leaves your Mac.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Muesli records your side of the meeting. Audio never leaves your Mac.</string>
+	<string>tinyMuesli records your side of the meeting. Audio never leaves your Mac.</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/PotentialHedge/muesli/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/PotentialHedge/tinymuesli/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>N+JohDGDkxA/654QhgMarc0rbBL20ET8bwJORWnSEPc=</string>
 </dict>

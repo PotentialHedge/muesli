@@ -31,7 +31,7 @@ public enum TrackSegments {
         let urls = urls(first: first)
         guard urls.count > 1 else { return (first, false) }
         let joined = FileManager.default.temporaryDirectory
-            .appendingPathComponent("muesli-\(UUID().uuidString)-\(first.lastPathComponent)")
+            .appendingPathComponent("tinymuesli-\(UUID().uuidString)-\(first.lastPathComponent)")
         do {
             try join(urls, to: joined)
         } catch {

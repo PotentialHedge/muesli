@@ -1,7 +1,7 @@
 import Foundation
-import MuesliCore
+import TinyMuesliCore
 
-/// The same binary doubles as a CLI: `Muesli.app/Contents/MacOS/Muesli <command>`.
+/// The same binary doubles as a CLI: `tinyMuesli.app/Contents/MacOS/tinyMuesli <command>`.
 @MainActor
 enum CLI {
     static let commands: Set<String> = ["mic-users", "record", "transcribe", "languages", "list", "show", "search", "mcp", "help", "--help", "-h"]
@@ -23,7 +23,7 @@ enum CLI {
     }
 
     static let usage = """
-        usage: muesli <command>
+        usage: tinymuesli <command>
 
           mic-users                 List processes using the microphone and the meeting app each maps to
           record [--seconds N]      Record mic + system audio (default 10s) into a new meeting folder
@@ -246,7 +246,7 @@ enum CLI {
         let path = URL(fileURLWithPath: reference, isDirectory: true)
         let hasTranscript = FileManager.default.fileExists(atPath: path.appendingPathComponent(MeetingFiles.transcript).path)
         guard let folder = MeetingLibrary(store: options.store).folder(id: reference) ?? (hasTranscript ? path : nil) else {
-            return fail("error: no meeting \"\(reference)\" (see muesli list)")
+            return fail("error: no meeting \"\(reference)\" (see tinymuesli list)")
         }
         let file = options.json ? MeetingFiles.json : MeetingFiles.transcript
         guard let text = try? String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8) else {

@@ -2,7 +2,7 @@ import Foundation
 
 /// Runs the user's `on-meeting-end` executable after a meeting's final pass.
 ///
-/// It gets the meeting folder as its argument and working directory, and `MUESLI_*` environment
+/// It gets the meeting folder as its argument and working directory, and `TINYMUESLI_*` environment
 /// variables. Its output goes to a log file. Nothing waits for it, so a slow hook holds nothing up.
 public struct MeetingEndHook: Sendable {
     public var executable: URL
@@ -15,8 +15,8 @@ public struct MeetingEndHook: Sendable {
     }
 
     public init(
-        executable: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/muesli/hooks/on-meeting-end"),
-        log: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Muesli/on-meeting-end.log")
+        executable: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/tinymuesli/hooks/on-meeting-end"),
+        log: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/tinyMuesli/on-meeting-end.log")
     ) {
         self.executable = executable
         self.log = log
@@ -31,10 +31,10 @@ public struct MeetingEndHook: Sendable {
         process.arguments = [folder.path]
         process.currentDirectoryURL = folder
         process.environment = ProcessInfo.processInfo.environment.merging([
-            "MUESLI_MEETING_DIR": folder.path,
-            "MUESLI_TRANSCRIPT_MD": folder.appendingPathComponent(MeetingFiles.transcript).path,
-            "MUESLI_TRANSCRIPT_JSON": folder.appendingPathComponent(MeetingFiles.json).path,
-            "MUESLI_STATUS": status.rawValue,
+            "TINYMUESLI_MEETING_DIR": folder.path,
+            "TINYMUESLI_TRANSCRIPT_MD": folder.appendingPathComponent(MeetingFiles.transcript).path,
+            "TINYMUESLI_TRANSCRIPT_JSON": folder.appendingPathComponent(MeetingFiles.json).path,
+            "TINYMUESLI_STATUS": status.rawValue,
         ]) { _, new in new }
         let output = openLog(for: folder)
         process.standardInput = FileHandle.nullDevice

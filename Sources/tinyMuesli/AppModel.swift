@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import MuesliCore
+import TinyMuesliCore
 import Observation
 import os
 
@@ -75,7 +75,7 @@ final class AppModel {
     @ObservationIgnored private var finishTask: Task<Void, Never>?
     /// What the last poll saw, so only changes get logged.
     @ObservationIgnored private var lastMicUsers: [String] = []
-    @ObservationIgnored private let log = Logger(subsystem: "dev.muesli.Muesli", category: "detection")
+    @ObservationIgnored private let log = Logger(subsystem: "com.tinymuesli.tinyMuesli", category: "detection")
     @ObservationIgnored private let notifications = NotificationController()
     /// Shared so the CoreML models stay loaded between meetings.
     @ObservationIgnored private let diarizer = FluidDiarizer()
@@ -116,7 +116,7 @@ final class AppModel {
         let processes = (try? AudioProcesses.usingMicrophone()) ?? []
         if micInUse != !processes.isEmpty { micInUse = !processes.isEmpty }
         // Persisted (notice level) so a meeting that didn't start or stop can be explained afterwards:
-        // log show --last 1d --predicate 'subsystem == "dev.muesli.Muesli"'
+        // log show --last 1d --predicate 'subsystem == "com.tinymuesli.tinyMuesli"'
         let micUsers = processes.map { "\($0.bundleID) (\($0.pid))" }.sorted()
         if micUsers != lastMicUsers {
             lastMicUsers = micUsers
@@ -186,7 +186,7 @@ final class AppModel {
         finishEndedMeeting()  // starting afresh: the ended meeting won't be continued
         Task {
             guard await MicRecorder.requestPermission() else {
-                lastError = "Muesli needs microphone access. Enable it in System Settings → Privacy & Security → Microphone."
+                lastError = "tinyMuesli needs microphone access. Enable it in System Settings → Privacy & Security → Microphone."
                 return
             }
             // Without a transcriber we still record; the final pass will report the problem.
@@ -340,7 +340,7 @@ final class AppModel {
     }
 
     /// Meetings interrupted by a quit or crash still have their audio: finish them now.
-    /// Failed ones are left alone (re-run with `muesli transcribe`), so a bad file can't loop.
+    /// Failed ones are left alone (re-run with `tinymuesli transcribe`), so a bad file can't loop.
     private func resumeUnfinishedMeetings() {
         let unfinished: Set<MeetingMetadata.Status> = [.recording, .recorded, .transcribing]
         for folder in store.recentMeetings(limit: 20) {
@@ -440,7 +440,7 @@ final class AppModel {
         guard let lastError else { return }
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "Muesli"
+        alert.messageText = "tinyMuesli"
         alert.informativeText = lastError
         alert.runModal()
     }
@@ -454,7 +454,7 @@ final class AppModel {
         panel.allowsMultipleSelection = false
         panel.directoryURL = store.root
         panel.prompt = "Choose"
-        panel.message = "Choose where Muesli saves meetings."
+        panel.message = "Choose where tinyMuesli saves meetings."
         // A menu bar app isn't frontmost, so the panel would open behind other windows.
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL,
@@ -469,7 +469,7 @@ final class AppModel {
         let count = movable.count == 1 ? "your meeting" : "your \(movable.count) meetings"
         alert.messageText = "Move \(count) to “\(url.lastPathComponent)”?"
         alert.informativeText = """
-            They're in \(meetingsFolderName). If you leave them there, Muesli and your agents won't \
+            They're in \(meetingsFolderName). If you leave them there, tinyMuesli and your agents won't \
             see them any more.
             """
         alert.addButton(withTitle: "Move Meetings")

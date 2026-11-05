@@ -3,7 +3,7 @@ import CoreAudio
 import Foundation
 import Synchronization
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 @Suite struct FrameRingTests {
     func fill(_ value: Float) -> (UnsafeMutablePointer<Float>, Int, Int) -> Void {
@@ -47,7 +47,7 @@ import Testing
 
 @Suite struct TrackWriterTests {
     func url() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("muesli-writer-\(UUID().uuidString).caf")
+        FileManager.default.temporaryDirectory.appendingPathComponent("tinymuesli-writer-\(UUID().uuidString).caf")
     }
 
     func stereo(frames: Int, left: Float, right: Float) -> AVAudioPCMBuffer {
@@ -253,7 +253,7 @@ import Testing
     }
 
     @Test func aSingleFileIsUsedAsIs() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-\(UUID().uuidString).caf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tinymuesli-\(UUID().uuidString).caf")
         let writer = try TrackWriter(url: url, inputFormat: mono(rate: 48_000, seconds: 0, value: 0).format)
         writer.close()
         defer { try? FileManager.default.removeItem(at: url) }

@@ -1,5 +1,5 @@
 import Foundation
-import MuesliCore
+import TinyMuesliCore
 import UserNotifications
 
 /// The "Zoom is using your microphone. Record?" prompt. Shortly after another meeting ended, it
@@ -64,7 +64,7 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
         }
         content.userInfo = [Self.appIDKey: app.id]
         // Asking is only useful while the meeting is on, so try to get past a Focus. Without the
-        // time-sensitive entitlement this needs Muesli allowed in the Focus's settings.
+        // time-sensitive entitlement this needs tinyMuesli allowed in the Focus's settings.
         content.interruptionLevel = .timeSensitive
         center.add(UNNotificationRequest(identifier: Self.promptID, content: content, trigger: nil))
     }

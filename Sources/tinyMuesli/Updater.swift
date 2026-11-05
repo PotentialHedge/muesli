@@ -7,7 +7,7 @@ import Sparkle
 /// against are in Info.plist (`SUFeedURL`, `SUPublicEDKey`).
 ///
 /// Sparkle asks on the second launch whether to check automatically; until then, and if the answer
-/// is no, Muesli only goes online for updates when "Check for Updates…" is chosen.
+/// is no, tinyMuesli only goes online for updates when "Check for Updates…" is chosen.
 @MainActor
 @Observable
 final class Updater: NSObject {

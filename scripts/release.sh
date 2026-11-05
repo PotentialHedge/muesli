@@ -3,7 +3,7 @@
 #
 #   scripts/release.sh 0.2.0
 #
-# Code-signs with MUESLI_SIGN_IDENTITY, by default the self-signed "Muesli Self-Signed" certificate
+# Code-signs with TINYMUESLI_SIGN_IDENTITY, by default the self-signed "Muesli Self-Signed" certificate
 # from this Mac's keychain. macOS ties privacy permissions to that certificate, so releases must
 # keep using it (an ad-hoc release would lose every user's permissions).
 #
@@ -20,12 +20,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${1:?usage: scripts/release.sh <version, e.g. 0.2.0>}"
-REPO="PotentialHedge/muesli"
+REPO="PotentialHedge/tinymuesli"
 TAG="v$VERSION"
 PLIST=Resources/Info.plist
 SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
 OUT=build/release
-export MUESLI_SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-Muesli Self-Signed}"
+export TINYMUESLI_SIGN_IDENTITY="${TINYMUESLI_SIGN_IDENTITY:-Muesli Self-Signed}"
 
 # Sparkle compares CFBundleVersion, so it must grow with every release.
 BUILD=$(( $(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") + 1 ))
@@ -36,14 +36,14 @@ scripts/build-app.sh
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
-ZIP="$OUT/Muesli-$VERSION.zip"
-ditto -c -k --sequesterRsrc --keepParent build/Muesli.app "$ZIP"
+ZIP="$OUT/tinyMuesli-$VERSION.zip"
+ditto -c -k --sequesterRsrc --keepParent build/tinyMuesli.app "$ZIP"
 # Signs the zip with the keychain key and writes $OUT/appcast.xml with one item, for this version.
 "$SPARKLE_BIN/generate_appcast" --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" "$OUT"
 
-echo "Muesli $VERSION (build $BUILD): $ZIP, $OUT/appcast.xml"
+echo "tinyMuesli $VERSION (build $BUILD): $ZIP, $OUT/appcast.xml"
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "DRY_RUN: no release created"
   exit 0
 fi
-gh release create "$TAG" --repo "$REPO" --title "Muesli $VERSION" --generate-notes "$ZIP" "$OUT/appcast.xml"
+gh release create "$TAG" --repo "$REPO" --title "tinyMuesli $VERSION" --generate-notes "$ZIP" "$OUT/appcast.xml"

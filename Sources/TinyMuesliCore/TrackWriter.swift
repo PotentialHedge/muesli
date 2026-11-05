@@ -5,7 +5,7 @@ import Synchronization
 
 /// Writes one mono audio track to disk as AAC in a CAF container.
 ///
-/// CAF instead of M4A because an M4A is unreadable until it's finalised; if Muesli crashes
+/// CAF instead of M4A because an M4A is unreadable until it's finalised; if tinyMuesli crashes
 /// mid-meeting, the audio in a CAF can still be recovered. Mono, because transcription and
 /// diarization don't need stereo.
 ///
@@ -31,7 +31,7 @@ public final class TrackWriter: @unchecked Sendable {
     private var isInterleaved: Bool
     private let sampleRate: Double
     private let ring = FrameRing()
-    private let queue = DispatchQueue(label: "muesli.track-writer", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "tinymuesli.track-writer", qos: .userInitiated)
     private let timer: DispatchSourceTimer
     private let isClosed = Atomic<Bool>(false)
     /// Written to the file in batches, so the tee gets sensible buffers rather than one per slot.

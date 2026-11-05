@@ -1,10 +1,10 @@
-# Muesli — Design
+# tinyMuesli — Design
 
-Muesli takes notes in meetings, so you remember them. It does that one job, fully on your Mac, and stays out of the way.
+tinyMuesli takes notes in meetings, so you remember them. It does that one job, fully on your Mac, and stays out of the way.
 
 ## Principles
 
-- **The filesystem is the API.** Muesli writes well-structured plain files. Everything else (summaries, chat, integrations) happens outside it: in your agent, through MCP, hooks, or the CLI.
+- **The filesystem is the API.** tinyMuesli writes well-structured plain files. Everything else (summaries, chat, integrations) happens outside it: in your agent, through MCP, hooks, or the CLI.
 - **100% local, privacy first.** No network access except optional model downloads and update checks. Free and open source.
 - **Small.** Native binary (a few MB), no bundled runtime. Models are downloaded on first use, never bundled.
 - **Minimal UI.** A menu bar status icon and a list of meetings.
@@ -27,7 +27,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 | Stop behaviour | Mic released for ~5 s (shorter gaps don't interrupt the recording) → capture pauses (mic and tap released, files kept open). If another meeting starts within 5 min, the notification and the menu offer to continue the paused meeting (the gap becomes silence, so times keep counting from its start) or record a new one; "always record" apps ask instead of starting, and record anew if nobody answers. After 5 min, or when a new recording starts, the paused meeting finishes and the final pass runs. Stopping by hand finishes at once. If a device now runs at another sample rate (e.g. AirPods instead of the built-in mic), that track continues in a second file (`mic-2.caf`) that starts where the first ended; the final pass joins a track's files into one temporary file, so diarization sees the whole meeting |
 | Audio retention | Optional, **off by default** (transcript only): `audio/` is deleted after a successful final pass. "Keep Audio After Transcribing" in the menu keeps it |
 | Pipeline | Each track is transcribed live as it's recorded; `transcript.md` grows during the meeting (remote speech labelled "Others"). At the end, the final pass diarizes the system track and rewrites `transcript.md` + `transcript.json` with speakers. If live transcription of a track failed, the final pass transcribes its file instead |
-| Crash safety | Audio is CAF (readable without finalising) and is only deleted after success. Frontmatter `status` tracks progress (`recording → recorded → transcribing → done`, or `failed` + `error`); at launch, unfinished meetings that still have audio are processed. Failed ones aren't retried automatically (`muesli transcribe` re-runs) |
+| Crash safety | Audio is CAF (readable without finalising) and is only deleted after success. Frontmatter `status` tracks progress (`recording → recorded → transcribing → done`, or `failed` + `error`); at launch, unfinished meetings that still have audio are processed. Failed ones aren't retried automatically (`tinymuesli transcribe` re-runs) |
 | Extensibility | Read-only MCP server (stdio; hand-written, no SDK), an `on-meeting-end` hook executable, CLI. No in-process plugins |
 | Skipping silence | Optional, **off by default** ("Skip Silence While Recording"). Silero VAD (FluidAudio, CoreML on the CPU; ~1 MB model downloaded on first use) scores each 256 ms; stretches without speech are written as zeros, which AAC stores in ~4 kbps instead of ~32 (a quiet room is never digital silence). Errs towards keeping audio: threshold 0.5, 0.5 s kept before speech and 1.5 s after, and a failing model keeps everything. Zeros rather than cuts, so the tracks stay aligned. On a 105-minute meeting it changed fewer words than re-running transcription on the same audio; a quiet 11-minute stretch went from 5.5 MB to 0.6 MB |
 | Audio threads | The capture callback only mixes down into a preallocated lock-free ring (holds 11–22 s). A queue drains it every 50 ms to encode, write and feed live transcription. If that falls too far behind, audio is dropped rather than blocking the callback, and the gap becomes silence |
@@ -78,16 +78,16 @@ Any search index is a derived cache that can be rebuilt from these files.
 ## Agent access
 
 - **CLI:** `list`, `show` and `search`, with `--json`.
-- **MCP:** `muesli mcp` offers `list_meetings`, `get_transcript` and `search_transcripts`. It only
+- **MCP:** `tinymuesli mcp` offers `list_meetings`, `get_transcript` and `search_transcripts`. It only
   reads, and a meeting id only resolves to a folder that exists under the meetings root.
 - **Setup:** "Copy Prompt for Agent" in the menu copies a prompt with this binary's path, which
   tells an agent how to install the MCP server and how to read what it returns.
-- **Hook:** after each final pass the app runs `~/.config/muesli/hooks/on-meeting-end`, if it's
+- **Hook:** after each final pass the app runs `~/.config/tinymuesli/hooks/on-meeting-end`, if it's
   executable, with the meeting folder as its argument and working directory, plus
-  `MUESLI_MEETING_DIR`, `MUESLI_TRANSCRIPT_MD`, `MUESLI_TRANSCRIPT_JSON` and `MUESLI_STATUS` (`done`
-  or `failed`). Output is appended to `~/Library/Logs/Muesli/on-meeting-end.log`, and a non-zero exit
-  shows in the menu. It also runs after crash recovery, but not for `muesli transcribe` or
-  `muesli record`, which you ran yourself.
+  `TINYMUESLI_MEETING_DIR`, `TINYMUESLI_TRANSCRIPT_MD`, `TINYMUESLI_TRANSCRIPT_JSON` and `TINYMUESLI_STATUS` (`done`
+  or `failed`). Output is appended to `~/Library/Logs/tinyMuesli/on-meeting-end.log`, and a non-zero exit
+  shows in the menu. It also runs after crash recovery, but not for `tinymuesli transcribe` or
+  `tinymuesli record`, which you ran yourself.
 
 Search is a substring scan of `transcript.md`, with no index, so meetings in progress are included.
 

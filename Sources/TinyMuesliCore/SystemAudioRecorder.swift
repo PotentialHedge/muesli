@@ -12,7 +12,7 @@ public final class SystemAudioRecorder {
     private var aggregateID = AudioObjectID.unknown
     private var ioProcID: AudioDeviceIOProcID?
     private var track: SegmentedTrack?
-    private let queue = DispatchQueue(label: "muesli.system-audio", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "tinymuesli.system-audio", qos: .userInitiated)
 
     public init() {}
 
@@ -71,7 +71,7 @@ public final class SystemAudioRecorder {
         let ownProcess = try? AudioObjectID.process(for: getpid())
         let tap = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
         tap.uuid = UUID()
-        tap.name = "Muesli"
+        tap.name = "tinyMuesli"
         tap.isPrivate = true
         tap.muteBehavior = .unmuted
         try check(AudioHardwareCreateProcessTap(tap, &tapID), "create system audio tap")
@@ -85,7 +85,7 @@ public final class SystemAudioRecorder {
         // open its input stream if it has one (AirPods, headsets), which can drop Bluetooth
         // headphones into low-quality call mode and puts extra buffers in front of the tap's.
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Muesli System Audio",
+            kAudioAggregateDeviceNameKey: "tinyMuesli System Audio",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,

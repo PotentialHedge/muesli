@@ -1,10 +1,10 @@
 import Foundation
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 /// A meetings root with one finished meeting and one in progress.
 private func makeLibrary() throws -> MeetingLibrary {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-library-\(UUID().uuidString)")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("tinymuesli-library-\(UUID().uuidString)")
     func add(_ name: String, status: MeetingMetadata.Status, body: String, json: Bool = false) throws {
         let folder = root.appendingPathComponent("2026/11/\(name)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -150,7 +150,7 @@ private func makeLibrary() throws -> MeetingLibrary {
 
 @Suite struct MeetingEndHookTests {
     func temp() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-hook-\(UUID().uuidString)", isDirectory: true)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tinymuesli-hook-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url.resolvingSymlinksInPath()
     }
@@ -184,7 +184,7 @@ private func makeLibrary() throws -> MeetingLibrary {
         let hook = try install("""
             #!/bin/sh
             echo "cwd:$(basename "$PWD")"
-            echo "$1|$MUESLI_MEETING_DIR|$MUESLI_STATUS|$MUESLI_TRANSCRIPT_MD|$MUESLI_TRANSCRIPT_JSON"
+            echo "$1|$TINYMUESLI_MEETING_DIR|$TINYMUESLI_STATUS|$TINYMUESLI_TRANSCRIPT_MD|$TINYMUESLI_TRANSCRIPT_JSON"
             echo oops >&2
             """, in: dir)
 
@@ -220,9 +220,9 @@ private func makeLibrary() throws -> MeetingLibrary {
 
 @Suite struct AgentPromptTests {
     @Test func containsAnInstallCommandAndConfigForThisBinary() {
-        let prompt = AgentPrompt.text(binaryPath: "/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli")
-        #expect(prompt.contains("claude mcp add --scope user muesli -- '/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli' mcp"))
-        #expect(prompt.contains(#"{"mcpServers":{"muesli":{"args":["mcp"],"command":"/Applications/My Apps/Muesli.app/Contents/MacOS/Muesli"}}}"#))
+        let prompt = AgentPrompt.text(binaryPath: "/Applications/My Apps/tinyMuesli.app/Contents/MacOS/tinyMuesli")
+        #expect(prompt.contains("claude mcp add --scope user tinymuesli -- '/Applications/My Apps/tinyMuesli.app/Contents/MacOS/tinyMuesli' mcp"))
+        #expect(prompt.contains(#"{"mcpServers":{"tinymuesli":{"args":["mcp"],"command":"/Applications/My Apps/tinyMuesli.app/Contents/MacOS/tinyMuesli"}}}"#))
     }
 
     @Test func namesEveryToolTheServerOffers() throws {

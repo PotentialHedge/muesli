@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "Muesli",
+    name: "tinyMuesli",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "Muesli", targets: ["Muesli"]),
+        .executable(name: "tinyMuesli", targets: ["tinyMuesli"]),
     ],
     dependencies: [
         // Speaker diarization (CoreML). Only the Diarizer trait: no TTS, no NeMo text-processing binary.
@@ -15,14 +15,14 @@ let package = Package(
     ],
     targets: [
         // Everything that isn't UI: detection, capture, transcription, file layout. Testable without the app.
-        .target(name: "MuesliCore", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),
+        .target(name: "TinyMuesliCore", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),
         // Menu bar app + CLI (same binary).
         .executableTarget(
-            name: "Muesli",
-            dependencies: ["MuesliCore", .product(name: "Sparkle", package: "Sparkle")],
+            name: "tinyMuesli",
+            dependencies: ["TinyMuesliCore", .product(name: "Sparkle", package: "Sparkle")],
             // Sparkle.framework is embedded in Contents/Frameworks by scripts/build-app.sh.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        .testTarget(name: "MuesliCoreTests", dependencies: ["MuesliCore"]),
+        .testTarget(name: "TinyMuesliCoreTests", dependencies: ["TinyMuesliCore"]),
     ]
 )

@@ -1,9 +1,9 @@
 import Foundation
 import Testing
-@testable import MuesliCore
+@testable import TinyMuesliCore
 
 @Suite struct LanguageChoiceTests {
-    /// What `muesli languages` reports on macOS 26.
+    /// What `tinymuesli languages` reports on macOS 26.
     private let locales = [
         "de-AT", "de-CH", "de-DE",
         "en-AU", "en-CA", "en-GB", "en-IE", "en-IN", "en-NZ", "en-SG", "en-US", "en-ZA",
