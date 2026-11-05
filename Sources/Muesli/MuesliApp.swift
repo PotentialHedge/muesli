@@ -20,6 +20,9 @@ private struct MenuContent: View {
     var body: some View {
         @Bindable var model = model
         Text(model.statusText)
+        if let ended = model.endedText {
+            Text(ended)
+        }
         if let processing = model.processingText {
             Text(processing)
         }
@@ -31,6 +34,11 @@ private struct MenuContent: View {
             Button("Record \(app.name) Meeting") { model.startRecording(app: app) }
         case .recording:
             Button("Stop Recording") { model.stopRecording() }
+            Button("Start New Meeting") { model.startNewMeeting() }
+        }
+        if let ended = model.ended {
+            Button("Continue \(AppModel.title(of: ended.session))") { model.continueMeeting() }
+            Button("Finish \(AppModel.title(of: ended.session)) Now") { model.finishEndedMeeting() }
         }
 
         if let app = model.currentApp {

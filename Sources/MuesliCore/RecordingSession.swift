@@ -15,6 +15,8 @@ public final class RecordingSession {
     public let appID: String?
     public let appName: String?
     public let startedAt: Date
+    /// Set while capture is paused: the meeting app left the mic, but the meeting may yet continue.
+    public private(set) var pausedAt: Date?
     /// Non-fatal problems, e.g. system audio failed but the mic is recording.
     public private(set) var warnings: [String] = []
 
@@ -64,7 +66,33 @@ public final class RecordingSession {
         }
     }
 
+    /// Stops capturing but keeps the tracks open, so `resume()` can carry on with the same meeting.
+    public func pause(now: Date = .now) {
+        guard pausedAt == nil else { return }
+        mic.pause()
+        system.pause()
+        pausedAt = now
+        live.update { $0.end = now }
+    }
+
+    /// Carries on recording after `pause()`. The pause becomes silence in both tracks, so they stay
+    /// aligned and transcript times keep counting from the start of the meeting. Throws if neither
+    /// track could restart (e.g. the mic's sample rate changed); the session is then still paused.
+    public func resume() throws {
+        guard pausedAt != nil else { return }
+        var errors: [String] = []
+        do { try mic.resume() } catch { errors.append("Microphone not recording: \(error)") }
+        do { try system.resume() } catch { errors.append("System audio not recording: \(error)") }
+        if errors.count == 2 {
+            throw RecordingError.nothingToRecord(errors)
+        }
+        warnings += errors
+        pausedAt = nil
+        live.update { $0.end = nil }
+    }
+
     public func stop(now: Date = .now) {
+        let now = pausedAt ?? now
         mic.stop()
         system.stop()
         if system.secondsWritten == 0, !warnings.contains(where: { $0.hasPrefix("System audio not recording") }) {

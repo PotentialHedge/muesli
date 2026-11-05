@@ -21,14 +21,50 @@ public final class SystemAudioRecorder {
 
     public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         do {
-            try startTap(url: url, clockStart: clockStart, tee: tee)
+            let format = try makeTap()
+            let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+            self.writer = writer
+            try capture(format: format, into: writer)
         } catch {
             stop()
             throw error
         }
     }
 
-    private func startTap(url: URL, clockStart: UInt64?, tee: (@Sendable (AVAudioPCMBuffer) -> Void)?) throws {
+    /// Removes the tap but keeps the track open, so `resume()` carries on in the same file.
+    public func pause() {
+        if aggregateID != .unknown {
+            if let ioProcID {
+                AudioDeviceStop(aggregateID, ioProcID)
+                AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
+            }
+            AudioHardwareDestroyAggregateDevice(aggregateID)
+        }
+        if tapID != .unknown {
+            AudioHardwareDestroyProcessTap(tapID)
+        }
+        queue.sync {}  // drain any in-flight callback
+
+        ioProcID = nil
+        aggregateID = .unknown
+        tapID = .unknown
+    }
+
+    /// The time paused becomes silence in the track. Does nothing if the track never started.
+    public func resume() throws {
+        guard let writer else { return }
+        do {
+            let format = try makeTap()
+            try writer.setInput(format)
+            try capture(format: format, into: writer)
+        } catch {
+            pause()
+            throw error
+        }
+    }
+
+    /// Creates the tap and the aggregate device that delivers it; returns the tap's format.
+    private func makeTap() throws -> AVAudioFormat {
         // Leave our own process out of the tap (it might play sounds later).
         let ownProcess = try? AudioObjectID.process(for: getpid())
         let tap = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
@@ -58,9 +94,10 @@ public final class SystemAudioRecorder {
             ]],
         ]
         try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "create aggregate device")
+        return format
+    }
 
-        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
-        self.writer = writer
+    private func capture(format: AVAudioFormat, into writer: TrackWriter) throws {
         try check(
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, Self.ioBlock(writing: writer, format: format)),
             "create IOProc"
@@ -84,22 +121,7 @@ public final class SystemAudioRecorder {
     }
 
     public func stop() {
-        if aggregateID != .unknown {
-            if let ioProcID {
-                AudioDeviceStop(aggregateID, ioProcID)
-                AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
-            }
-            AudioHardwareDestroyAggregateDevice(aggregateID)
-        }
-        if tapID != .unknown {
-            AudioHardwareDestroyProcessTap(tapID)
-        }
-        queue.sync {}  // drain any in-flight callback before closing the file
+        pause()
         writer?.close()
-
-        ioProcID = nil
-        aggregateID = .unknown
-        tapID = .unknown
     }
 }
-

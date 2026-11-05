@@ -22,8 +22,9 @@ public final class TrackWriter: @unchecked Sendable {
     private let tee: (@Sendable (AVAudioPCMBuffer) -> Void)?
     /// Host time (mach ticks) of sample 0. nil: no alignment, just append.
     private let clockStart: UInt64?
-    private let channels: Int
-    private let isInterleaved: Bool
+    /// The input's layout. Only changed by `setInput`, while nothing is capturing.
+    private var channels: Int
+    private var isInterleaved: Bool
     private let sampleRate: Double
     private let ring = FrameRing()
     private let queue = DispatchQueue(label: "muesli.track-writer", qos: .userInitiated)
@@ -81,6 +82,21 @@ public final class TrackWriter: @unchecked Sendable {
 
     deinit {
         timer.cancel()
+    }
+
+    /// For resuming a paused track from a newly started capture, whose device may have a different
+    /// channel layout. Call only while nothing is writing. The sample rate can't change: the file
+    /// and the tee keep the first input's rate.
+    public func setInput(_ format: AVAudioFormat) throws {
+        guard format.commonFormat == .pcmFormatFloat32, format.sampleRate == sampleRate else {
+            throw CocoaError(.featureUnsupported, userInfo: [
+                NSLocalizedDescriptionKey: "The input changed from \(Int(sampleRate)) Hz to \(format)",
+            ])
+        }
+        queue.sync {
+            channels = Int(format.channelCount)
+            isInterleaved = format.isInterleaved
+        }
     }
 
     /// Gaps shorter than this are jitter, not missing audio.

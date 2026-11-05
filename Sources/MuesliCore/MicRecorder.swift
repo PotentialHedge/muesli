@@ -25,18 +25,43 @@ public final class MicRecorder {
     }
 
     public func start(url: URL, clockStart: UInt64? = nil, tee: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+        let format = try prepareInput()
+        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
+        self.writer = writer
+        try capture(format: format, into: writer)
+    }
+
+    /// Releases the mic but keeps the track open, so `resume()` carries on in the same file.
+    public func pause() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+    }
+
+    /// The time paused becomes silence in the track. Does nothing if the track never started.
+    public func resume() throws {
+        guard let writer else { return }
+        let format = try prepareInput()
+        try writer.setInput(format)  // the input device may have changed meanwhile
+        try capture(format: format, into: writer)
+    }
+
+    private func prepareInput() throws -> AVAudioFormat {
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
         // By default voice processing ducks all other audio, which would turn the meeting down.
         input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+        return input.outputFormat(forBus: 0)
+    }
 
-        let format = input.outputFormat(forBus: 0)
-        let writer = try TrackWriter(url: url, inputFormat: format, clockStart: clockStart, tee: tee)
-        self.writer = writer
-        input.installTap(onBus: 0, bufferSize: 4096, format: format, block: Self.tapBlock(writing: writer))
-
+    private func capture(format: AVAudioFormat, into writer: TrackWriter) throws {
+        engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format, block: Self.tapBlock(writing: writer))
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            engine.inputNode.removeTap(onBus: 0)
+            throw error
+        }
     }
 
     /// Built in a nonisolated static context so the block never inherits an actor.
@@ -45,8 +70,7 @@ public final class MicRecorder {
     }
 
     public func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        pause()
         writer?.close()
     }
 }

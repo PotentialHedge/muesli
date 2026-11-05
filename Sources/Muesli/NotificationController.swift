@@ -2,17 +2,21 @@ import Foundation
 import MuesliCore
 import UserNotifications
 
-/// The "Zoom is using your microphone. Record?" prompt.
+/// The "Zoom is using your microphone. Record?" prompt. Shortly after another meeting ended, it
+/// also offers to continue that one instead.
 @MainActor
 final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
     enum Action {
         case record(appID: String)
         case alwaysRecord(appID: String)
+        case continueMeeting(appID: String)
     }
 
     var onAction: ((Action) -> Void)?
 
     nonisolated private static let category = "meeting-detected"
+    nonisolated private static let continuableCategory = "meeting-detected-continuable"
+    nonisolated private static let continueAction = "continue"
     nonisolated private static let recordAction = "record"
     nonisolated private static let alwaysRecordAction = "always-record"
     nonisolated private static let promptID = "meeting-prompt"
@@ -26,12 +30,19 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
     func setUp() {
         guard let center else { return }
         center.delegate = self
+        let alwaysRecord = UNNotificationAction(identifier: Self.alwaysRecordAction, title: "Always Record This App")
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: Self.category,
+                actions: [UNNotificationAction(identifier: Self.recordAction, title: "Record"), alwaysRecord],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Self.continuableCategory,
                 actions: [
-                    UNNotificationAction(identifier: Self.recordAction, title: "Record"),
-                    UNNotificationAction(identifier: Self.alwaysRecordAction, title: "Always Record This App"),
+                    UNNotificationAction(identifier: Self.continueAction, title: "Continue Previous Meeting"),
+                    UNNotificationAction(identifier: Self.recordAction, title: "Record New Meeting"),
+                    alwaysRecord,
                 ],
                 intentIdentifiers: []
             ),
@@ -39,12 +50,18 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func promptToRecord(_ app: MeetingApp) {
+    /// - Parameter previous: a recently ended meeting that this one could continue, if any.
+    func promptToRecord(_ app: MeetingApp, previous: String? = nil) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = "\(app.name) is using your microphone"
-        content.body = "Record this meeting?"
-        content.categoryIdentifier = Self.category
+        if let previous {
+            content.body = "Record this meeting, or continue “\(previous)”?"
+            content.categoryIdentifier = Self.continuableCategory
+        } else {
+            content.body = "Record this meeting?"
+            content.categoryIdentifier = Self.category
+        }
         content.userInfo = [Self.appIDKey: app.id]
         center.add(UNNotificationRequest(identifier: Self.promptID, content: content, trigger: nil))
     }
@@ -63,6 +80,7 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
             switch actionID {
             case Self.recordAction: onAction?(.record(appID: appID))
             case Self.alwaysRecordAction: onAction?(.alwaysRecord(appID: appID))
+            case Self.continueAction: onAction?(.continueMeeting(appID: appID))
             default: break  // clicking the banner itself just dismisses it
             }
         }

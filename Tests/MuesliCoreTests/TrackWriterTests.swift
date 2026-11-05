@@ -110,6 +110,41 @@ import Testing
         #expect(abs(writer.secondsWritten - 2.01) < 0.001)
     }
 
+    @Test func resumesFromAnInputWithAnotherLayout() throws {
+        // A paused track picking up again on a different mic: deinterleaved 3-channel, same rate.
+        let url = url()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let received = Mutex<[Float]>([])
+        let first = stereo(frames: 4, left: 0.2, right: 0.4)
+        let writer = try TrackWriter(url: url, inputFormat: first.format) { buffer in
+            received.withLock { $0 += UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)) }
+        }
+        writer.write(first)
+
+        let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | 3)!
+        let second = AVAudioPCMBuffer(pcmFormat: AVAudioFormat(standardFormatWithSampleRate: 48_000, channelLayout: layout),
+                                      frameCapacity: 2)!
+        second.frameLength = 2
+        for ch in 0..<3 { second.floatChannelData![ch][0] = 0.6; second.floatChannelData![ch][1] = 0.6 }
+        try writer.setInput(second.format)
+        writer.write(second)
+        writer.close()
+
+        let expected: [Float] = [0.3, 0.3, 0.3, 0.3, 0.6, 0.6]
+        let samples = received.withLock { $0 }
+        #expect(samples.count == expected.count)
+        #expect(zip(samples, expected).allSatisfy { abs($0 - $1) < 1e-6 })
+    }
+
+    @Test func refusesAnInputAtAnotherSampleRate() throws {
+        let url = url()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try TrackWriter(url: url, inputFormat: stereo(frames: 1, left: 0, right: 0).format)
+        defer { writer.close() }
+        let slower = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)!
+        #expect(throws: (any Error).self) { try writer.setInput(slower) }
+    }
+
     @Test func ignoresWritesAfterClose() throws {
         let url = url()
         defer { try? FileManager.default.removeItem(at: url) }
