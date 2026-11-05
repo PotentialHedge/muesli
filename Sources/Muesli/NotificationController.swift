@@ -63,6 +63,9 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
             content.categoryIdentifier = Self.category
         }
         content.userInfo = [Self.appIDKey: app.id]
+        // Asking is only useful while the meeting is on, so try to get past a Focus. Without the
+        // time-sensitive entitlement this needs Muesli allowed in the Focus's settings.
+        content.interruptionLevel = .timeSensitive
         center.add(UNNotificationRequest(identifier: Self.promptID, content: content, trigger: nil))
     }
 

@@ -15,7 +15,7 @@ public struct MeetingDetector: Sendable {
     public private(set) var current: MeetingApp?
     private var lastSeen: Date?
 
-    public init(gracePeriod: TimeInterval = 20) {
+    public init(gracePeriod: TimeInterval = 5) {
         self.gracePeriod = gracePeriod
     }
 

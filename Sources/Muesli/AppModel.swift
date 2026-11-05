@@ -68,7 +68,9 @@ final class AppModel {
     }
 
     private(set) var store = MeetingStore()
-    @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
+    /// A gap shorter than this (a device switch, a reconnect) doesn't interrupt the recording at all.
+    /// A longer one pauses it, and the meeting app coming back prompts to continue.
+    @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 5)
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var finishTask: Task<Void, Never>?
     /// What the last poll saw, so only changes get logged.
