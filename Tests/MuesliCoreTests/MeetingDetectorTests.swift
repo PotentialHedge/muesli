@@ -84,13 +84,30 @@ private let t0 = Date(timeIntervalSince1970: 1_000_000)
         #expect(MeetingStore.folderName(start: date, appName: "A/B: C", calendar: calendar) == "2026-11-04 0905 A-B- C")
     }
 
-    @Test func parsesFolderNameBack() throws {
+    @Test func displayNameDropsOnlyOurTimestamp() {
         let date = calendar.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: 9, minute: 5))!
-        let parsed = try #require(MeetingStore.parseFolderName("2026-11-04 0905 Zoom (2)", calendar: calendar))
-        #expect(parsed.start == date)
-        #expect(parsed.label == "Zoom (2)")
-        #expect(MeetingStore.parseFolderName("Notes", calendar: calendar) == nil)
-        #expect(MeetingStore.parseFolderName("2026-11-04 9am Zoom", calendar: calendar) == nil)
+        let folder = { (name: String) in URL(fileURLWithPath: "/m/2026/11/\(name)") }
+        #expect(MeetingStore.displayName(of: folder("2026-11-04 0905 Zoom (2)"), start: date, calendar: calendar) == "Zoom (2)")
+        #expect(MeetingStore.displayName(of: folder("Design review"), start: date, calendar: calendar) == "Design review")
+        #expect(MeetingStore.displayName(of: folder("2026-11-03 0905 Zoom"), start: date, calendar: calendar) == "2026-11-03 0905 Zoom")
+    }
+
+    @Test func renamedMeetingsKeepTheirPlace() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MeetingStore(root: root)
+        func meeting(hour: Int) throws -> URL {
+            let start = calendar.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: hour))!
+            let folder = try store.makeMeetingFolder(start: start, appName: "Zoom", calendar: calendar)
+            try MeetingMetadata(start: start, app: "Zoom", status: .done).frontmatter()
+                .write(to: folder.appendingPathComponent(MeetingFiles.transcript), atomically: true, encoding: .utf8)
+            return folder
+        }
+        let early = try meeting(hour: 9)
+        _ = try meeting(hour: 11)
+        try FileManager.default.moveItem(at: early, to: early.deletingLastPathComponent().appendingPathComponent("Standup"))
+
+        #expect(store.recentMeetings().map(\.lastPathComponent) == ["2026-11-04 1100 Zoom", "Standup"])
     }
 
     @Test func createsYearMonthFoldersAndAvoidsCollisions() throws {

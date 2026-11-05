@@ -23,24 +23,21 @@ public struct MeetingStore: Sendable {
     }
 
     public static func folderName(start: Date, appName: String?, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: start)
-        let stamp = String(format: "%04d-%02d-%02d %02d%02d", c.year!, c.month!, c.day!, c.hour!, c.minute!)
-        let label = sanitize(appName ?? "Meeting")
-        return "\(stamp) \(label)"
+        "\(stamp(start, calendar: calendar)) \(sanitize(appName ?? "Meeting"))"
     }
 
-    /// Reads back a name made by `folderName`, e.g. "2026-11-04 1030 Zoom (2)" gives that start
-    /// and "Zoom (2)". Nil for folders not named that way.
-    public static func parseFolderName(_ name: String, calendar: Calendar = .current) -> (start: Date, label: String)? {
-        let parts = name.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-        guard parts.count == 3 else { return nil }
-        let day = parts[0].split(separator: "-").compactMap { Int($0) }
-        let time = parts[1]
-        guard day.count == 3, time.count == 4, let hhmm = Int(time),
-              let start = calendar.date(from: DateComponents(
-                year: day[0], month: day[1], day: day[2], hour: hhmm / 100, minute: hhmm % 100))
-        else { return nil }
-        return (start, String(parts[2]))
+    /// The name to show for a meeting folder: without the leading timestamp `folderName` adds,
+    /// since the date is shown separately. A folder the user renamed keeps its whole name.
+    public static func displayName(of folder: URL, start: Date, calendar: Calendar = .current) -> String {
+        let name = folder.lastPathComponent
+        let prefix = stamp(start, calendar: calendar) + " "
+        guard name.hasPrefix(prefix), name.count > prefix.count else { return name }
+        return String(name.dropFirst(prefix.count))
+    }
+
+    private static func stamp(_ date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return String(format: "%04d-%02d-%02d %02d%02d", c.year!, c.month!, c.day!, c.hour!, c.minute!)
     }
 
     /// Creates a fresh folder for a meeting, adding " (2)", " (3)"... on collisions.
@@ -63,12 +60,21 @@ public struct MeetingStore: Sendable {
         return candidate
     }
 
-    /// Most recent meeting folders first. Names start with a timestamp, so name order is time order.
+    /// Most recent meeting folders first, by the start date in `transcript.md`, so folders can be
+    /// renamed. Within a month, folders without readable metadata come last, in name order.
     public func recentMeetings(limit: Int = 10) -> [URL] {
         var result: [URL] = []
         for year in Self.subdirectories(root, digits: 4) {
             for month in Self.subdirectories(year, digits: 2) {
-                for meeting in Self.subdirectories(month) {
+                let meetings = Self.subdirectories(month).map { ($0, Self.start(of: $0)) }
+                for (meeting, _) in meetings.sorted(by: { a, b in
+                    switch (a.1, b.1) {
+                    case let (x?, y?) where x != y: x > y
+                    case (_?, nil): true
+                    case (nil, _?): false
+                    default: a.0.lastPathComponent > b.0.lastPathComponent
+                    }
+                }) {
                     result.append(meeting)
                     if result.count >= limit { return result }
                 }
@@ -134,6 +140,15 @@ public struct MeetingStore: Sendable {
                 return name.count == digits && name.allSatisfy(\.isASCII) && name.allSatisfy(\.isNumber)
             }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    /// Start date from the frontmatter, reading only the top of the file.
+    static func start(of meeting: URL) -> Date? {
+        guard let handle = try? FileHandle(forReadingFrom: meeting.appendingPathComponent(MeetingFiles.transcript)),
+              let head = try? handle.read(upToCount: 16_384)
+        else { return nil }
+        try? handle.close()
+        return MeetingMetadata(parsing: String(decoding: head, as: UTF8.self))?.start
     }
 
     /// Nothing but hidden files (like .DS_Store) left.

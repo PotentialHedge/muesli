@@ -29,7 +29,7 @@ final class AppModel {
     /// Some other app (meeting app or not) is using the mic.
     private(set) var micInUse = false
     private(set) var lastError: String?
-    private(set) var recentMeetings: [URL] = []
+    private(set) var recentMeetings: [MeetingSummary] = []
     /// Bundle IDs of apps the user wants recorded without asking.
     private(set) var alwaysRecord: Set<String>
     /// How many meetings are being moved to a newly chosen folder.
@@ -359,7 +359,7 @@ final class AppModel {
     }
 
     func refreshRecentMeetings() {
-        recentMeetings = store.recentMeetings(limit: 5)
+        recentMeetings = MeetingLibrary(store: store).meetings(limit: 5)
     }
 
     struct RecentDay: Identifiable {
@@ -372,16 +372,11 @@ final class AppModel {
     var recentDays: [RecentDay] {
         let calendar = Calendar.current
         var days: [RecentDay] = []
-        for folder in recentMeetings {
-            let name = folder.lastPathComponent
-            let day: String
-            let title: String
-            if let (start, label) = MeetingStore.parseFolderName(name, calendar: calendar) {
-                day = Self.dayTitle(start, calendar: calendar)
-                title = "\(start.formatted(date: .omitted, time: .shortened)) · \(label)"
-            } else {
-                (day, title) = ("Other", name)
-            }
+        for meeting in recentMeetings {
+            let folder = URL(fileURLWithPath: meeting.path)
+            let day = Self.dayTitle(meeting.start, calendar: calendar)
+            let name = MeetingStore.displayName(of: folder, start: meeting.start, calendar: calendar)
+            let title = "\(meeting.start.formatted(date: .omitted, time: .shortened)) · \(name)"
             if days.last?.title == day {
                 days[days.count - 1] = RecentDay(title: day, meetings: days[days.count - 1].meetings + [(folder, title)])
             } else {
