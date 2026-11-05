@@ -21,6 +21,12 @@
 	<!-- Menu bar only: no Dock icon. -->
 	<key>LSUIElement</key>
 	<true/>
+	<!-- Updates (Sparkle). Archives are checked against this key; its private half is in the
+	     release machine's keychain (scripts/release.sh). -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/PotentialHedge/muesli/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>N+JohDGDkxA/654QhgMarc0rbBL20ET8bwJORWnSEPc=</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Muesli records your side of the meeting. Audio never leaves your Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>

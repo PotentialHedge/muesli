@@ -61,6 +61,12 @@ final class AppModel {
         }
     }
 
+    /// A meeting is being recorded, paused, processed or moved, so the app shouldn't quit for an update.
+    var isBusy: Bool {
+        if case .recording = status { return true }
+        return ended != nil || !processing.isEmpty || movingMeetings != nil
+    }
+
     private(set) var store = MeetingStore()
     @ObservationIgnored private var detector = MeetingDetector(gracePeriod: 20)
     @ObservationIgnored private var pollTask: Task<Void, Never>?

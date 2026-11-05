@@ -5,7 +5,7 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 ## Principles
 
 - **The filesystem is the API.** Muesli writes well-structured plain files. Everything else (summaries, chat, integrations) happens outside it: in your agent, through MCP, hooks, or the CLI.
-- **100% local, privacy first.** No network access except optional model downloads. Free and open source.
+- **100% local, privacy first.** No network access except optional model downloads and update checks. Free and open source.
 - **Small.** Native binary (a few MB), no bundled runtime. Models are downloaded on first use, never bundled.
 - **Minimal UI.** A menu bar status icon and a list of meetings.
 
@@ -31,7 +31,8 @@ Muesli takes notes in meetings, so you remember them. It does that one job, full
 | Extensibility | Read-only MCP server (stdio; hand-written, no SDK), an `on-meeting-end` hook executable, CLI. No in-process plugins |
 | Skipping silence | Optional, **off by default** ("Skip Silence While Recording"). Silero VAD (FluidAudio, CoreML on the CPU; ~1 MB model downloaded on first use) scores each 256 ms; stretches without speech are written as zeros, which AAC stores in ~4 kbps instead of ~32 (a quiet room is never digital silence). Errs towards keeping audio: threshold 0.5, 0.5 s kept before speech and 1.5 s after, and a failing model keeps everything. Zeros rather than cuts, so the tracks stay aligned. On a 105-minute meeting it changed fewer words than re-running transcription on the same audio; a quiet 11-minute stretch went from 5.5 MB to 0.6 MB |
 | Audio threads | The capture callback only mixes down into a preallocated lock-free ring (holds 11–22 s). A queue drains it every 50 ms to encode, write and feed live transcription. If that falls too far behind, audio is dropped rather than blocking the callback, and the gap becomes silence |
-| Distribution | Notarized DMG + Sparkle updates; Homebrew cask |
+| Distribution | Planned: notarized DMG; Homebrew cask |
+| Updates | Sparkle 2. `scripts/release.sh` publishes a GitHub release with the zipped app and a one-item `appcast.xml`; `SUFeedURL` is the latest release's appcast. Archives are EdDSA-signed (private key in the releasing Mac's keychain, public key in Info.plist). Sparkle asks on the second launch whether to check automatically, so nothing goes online before the user agrees; "Check for Updates…" is always in the menu. A downloaded update waits to relaunch until no meeting is recording, paused, being processed or moved. The CLI and MCP server never check. Ad-hoc builds turn off library validation, because the hardened runtime otherwise refuses an embedded framework without a team ID |
 | Permissions | Microphone, System Audio Recording, Notifications. Nothing else |
 
 ## File layout
@@ -118,4 +119,5 @@ diarization; the OS manages transcription models.
 3. Live transcription → `transcript.md` ✓
 4. Final pass: diarization, `transcript.json` ✓
 5. CLI + MCP server + hooks ✓
-6. Signing, notarization, Sparkle, Homebrew cask
+6. Sparkle updates ✓
+7. Signing, notarization, Homebrew cask

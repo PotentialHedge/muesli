@@ -67,6 +67,21 @@ It also gets `MUESLI_MEETING_DIR`, `MUESLI_TRANSCRIPT_MD` and `MUESLI_TRANSCRIPT
 minimal `PATH`, so use absolute paths in the script. Output goes to
 `~/Library/Logs/Muesli/on-meeting-end.log`.
 
+## Updates
+
+The app updates itself through [Sparkle](https://sparkle-project.org): "Check for Updates…" in the
+menu, and automatic checks once you allow them. To publish a version:
+
+```sh
+scripts/release.sh 0.2.0      # bumps Info.plist, builds, signs, creates GitHub release v0.2.0
+git commit -am "Release 0.2.0"
+```
+
+The script signs the archive with the Sparkle key in your keychain (`generate_keys -x <file>` from
+`.build/artifacts/sparkle/Sparkle/bin` exports it; keep a backup, since without it no update can be
+published to existing installs). `DRY_RUN=1` builds `build/release/` without publishing. The feed is
+on GitHub releases, so the repository has to be public for copies to fetch it.
+
 ## Permissions
 
 Run CLI commands with `open -n build/Muesli.app --args <command>` if you want Muesli's own

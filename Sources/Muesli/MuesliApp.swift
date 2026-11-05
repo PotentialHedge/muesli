@@ -3,11 +3,18 @@ import MuesliCore
 import SwiftUI
 
 struct MuesliApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    @State private var updater: Updater
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _updater = State(initialValue: Updater { model.isBusy })
+    }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model)
+            MenuContent(model: model, updater: updater)
         } label: {
             Image(systemName: model.statusSymbol)
         }
@@ -16,9 +23,11 @@ struct MuesliApp: App {
 
 private struct MenuContent: View {
     let model: AppModel
+    let updater: Updater
 
     var body: some View {
         @Bindable var model = model
+        @Bindable var updater = updater
         Text(model.statusText)
         if let ended = model.endedText {
             Text(ended)
@@ -85,6 +94,12 @@ private struct MenuContent: View {
         Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
         Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
         Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
+
+        Divider()
+
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
+        Toggle("Check for Updates Automatically", isOn: $updater.checksAutomatically)
 
         Divider()
 
