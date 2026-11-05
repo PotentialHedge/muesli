@@ -71,10 +71,10 @@ private struct MenuContent: View {
 
         Divider()
 
-        if !model.recentMeetings.isEmpty {
-            Section("Recent") {
-                ForEach(model.recentMeetings, id: \.self) { folder in
-                    Button(folder.lastPathComponent) { NSWorkspace.shared.open(folder) }
+        ForEach(model.recentDays) { day in
+            Section(day.title) {
+                ForEach(day.meetings, id: \.folder) { meeting in
+                    Button(meeting.title) { NSWorkspace.shared.open(meeting.folder) }
                 }
             }
         }

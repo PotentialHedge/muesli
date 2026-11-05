@@ -29,6 +29,20 @@ public struct MeetingStore: Sendable {
         return "\(stamp) \(label)"
     }
 
+    /// Reads back a name made by `folderName`, e.g. "2026-11-04 1030 Zoom (2)" gives that start
+    /// and "Zoom (2)". Nil for folders not named that way.
+    public static func parseFolderName(_ name: String, calendar: Calendar = .current) -> (start: Date, label: String)? {
+        let parts = name.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        let day = parts[0].split(separator: "-").compactMap { Int($0) }
+        let time = parts[1]
+        guard day.count == 3, time.count == 4, let hhmm = Int(time),
+              let start = calendar.date(from: DateComponents(
+                year: day[0], month: day[1], day: day[2], hour: hhmm / 100, minute: hhmm % 100))
+        else { return nil }
+        return (start, String(parts[2]))
+    }
+
     /// Creates a fresh folder for a meeting, adding " (2)", " (3)"... on collisions.
     public func makeMeetingFolder(start: Date, appName: String?, calendar: Calendar = .current) throws -> URL {
         let c = calendar.dateComponents([.year, .month], from: start)

@@ -84,6 +84,15 @@ private let t0 = Date(timeIntervalSince1970: 1_000_000)
         #expect(MeetingStore.folderName(start: date, appName: "A/B: C", calendar: calendar) == "2026-11-04 0905 A-B- C")
     }
 
+    @Test func parsesFolderNameBack() throws {
+        let date = calendar.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: 9, minute: 5))!
+        let parsed = try #require(MeetingStore.parseFolderName("2026-11-04 0905 Zoom (2)", calendar: calendar))
+        #expect(parsed.start == date)
+        #expect(parsed.label == "Zoom (2)")
+        #expect(MeetingStore.parseFolderName("Notes", calendar: calendar) == nil)
+        #expect(MeetingStore.parseFolderName("2026-11-04 9am Zoom", calendar: calendar) == nil)
+    }
+
     @Test func createsYearMonthFoldersAndAvoidsCollisions() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -362,6 +362,43 @@ final class AppModel {
         recentMeetings = store.recentMeetings(limit: 5)
     }
 
+    struct RecentDay: Identifiable {
+        var id: String { title }
+        let title: String
+        let meetings: [(folder: URL, title: String)]
+    }
+
+    /// Recent meetings grouped by the day they started, newest first.
+    var recentDays: [RecentDay] {
+        let calendar = Calendar.current
+        var days: [RecentDay] = []
+        for folder in recentMeetings {
+            let name = folder.lastPathComponent
+            let day: String
+            let title: String
+            if let (start, label) = MeetingStore.parseFolderName(name, calendar: calendar) {
+                day = Self.dayTitle(start, calendar: calendar)
+                title = "\(start.formatted(date: .omitted, time: .shortened)) · \(label)"
+            } else {
+                (day, title) = ("Other", name)
+            }
+            if days.last?.title == day {
+                days[days.count - 1] = RecentDay(title: day, meetings: days[days.count - 1].meetings + [(folder, title)])
+            } else {
+                days.append(RecentDay(title: day, meetings: [(folder, title)]))
+            }
+        }
+        return days
+    }
+
+    private static func dayTitle(_ date: Date, calendar: Calendar) -> String {
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        let sameYear = calendar.isDate(date, equalTo: .now, toGranularity: .year)
+        let style = Date.FormatStyle().weekday(.wide).day().month(.wide)
+        return date.formatted(sameYear ? style : style.year())
+    }
+
     func openMeetingsFolder() {
         try? FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
         NSWorkspace.shared.open(store.root)
