@@ -10,7 +10,6 @@ struct MuesliApp: App {
         let model = AppModel()
         _model = State(initialValue: model)
         _updater = State(initialValue: Updater { model.isBusy })
-        PlainMenuBadges.install()
     }
 
     var body: some Scene {
@@ -112,47 +111,5 @@ private struct MenuContent: View {
 
         Button("Quit Muesli") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
-    }
-}
-
-/// SwiftUI draws a menu item's `.badge` as a pill. We want plain gray text at the right edge, so
-/// when a menu opens, each badge becomes a right-aligned tab in the item's title instead.
-@MainActor
-enum PlainMenuBadges {
-    private static var observer: NSObjectProtocol?
-
-    static func install() {
-        guard observer == nil else { return }
-        observer = NotificationCenter.default.addObserver(
-            forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
-        ) { note in
-            // Posted on the main thread (queue: .main), where the menu lives.
-            nonisolated(unsafe) let menu = note.object as? NSMenu
-            MainActor.assumeIsolated {
-                if let menu { restyle(menu) }
-            }
-        }
-    }
-
-    private static func restyle(_ menu: NSMenu) {
-        let badged = menu.items.compactMap { item in
-            item.badge?.stringValue.flatMap { $0.isEmpty ? nil : (item, $0) }
-        }
-        guard !badged.isEmpty else { return }
-        let items = badged.map(\.0), badges = badged.map(\.1)
-        let font = menu.font ?? NSFont.menuFont(ofSize: 0)
-        func width(_ s: String) -> CGFloat { (s as NSString).size(withAttributes: [.font: font]).width }
-        let titles = items.map { $0.title }
-        let tab = (titles.map(width).max() ?? 0) + 24 + (badges.map(width).max() ?? 0)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.tabStops = [NSTextTab(textAlignment: .right, location: tab)]
-        for (item, (title, badge)) in zip(items, zip(titles, badges)) {
-            let text = NSMutableAttributedString(string: title + "\t", attributes: [.font: font, .paragraphStyle: paragraph])
-            text.append(NSAttributedString(string: badge, attributes: [
-                .font: font, .paragraphStyle: paragraph, .foregroundColor: NSColor.secondaryLabelColor,
-            ]))
-            item.badge = nil
-            item.attributedTitle = text
-        }
     }
 }
