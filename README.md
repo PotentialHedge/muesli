@@ -82,6 +82,11 @@ The script signs the archive with the Sparkle key in your keychain (`generate_ke
 published to existing installs). `DRY_RUN=1` builds `build/release/` without publishing. The feed is
 on GitHub releases, so the repository has to be public for copies to fetch it.
 
+Releases are code-signed with the self-signed `Muesli Self-Signed` certificate in your keychain, or
+`MUESLI_SIGN_IDENTITY` if set. Permissions survive an update only while the certificate stays the
+same, so back it up from Keychain Access as well. Because it isn't from Apple, the first install
+needs a Gatekeeper override (System Settings → Privacy & Security → Open Anyway); updates don't.
+
 ## Permissions
 
 Run CLI commands with `open -n build/Muesli.app --args <command>` if you want Muesli's own

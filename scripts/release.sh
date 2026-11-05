@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Builds a release and publishes it as a GitHub release that Sparkle picks up.
 #
-#   MUESLI_SIGN_IDENTITY="Developer ID Application: …" scripts/release.sh 0.2.0
+#   scripts/release.sh 0.2.0
+#
+# Code-signs with MUESLI_SIGN_IDENTITY, by default the self-signed "Muesli Self-Signed" certificate
+# from this Mac's keychain. macOS ties privacy permissions to that certificate, so releases must
+# keep using it (an ad-hoc release would lose every user's permissions).
 #
 # Bumps the version in Resources/Info.plist (commit that afterwards), builds, zips the app, signs
 # the zip with the Sparkle EdDSA key from this Mac's keychain, and uploads the zip and appcast.xml
@@ -21,6 +25,7 @@ TAG="v$VERSION"
 PLIST=Resources/Info.plist
 SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
 OUT=build/release
+export MUESLI_SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-Muesli Self-Signed}"
 
 # Sparkle compares CFBundleVersion, so it must grow with every release.
 BUILD=$(( $(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") + 1 ))

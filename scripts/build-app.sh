@@ -30,7 +30,7 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # Sparkle (updates). Muesli isn't sandboxed, so it doesn't need Sparkle's XPC services. The framework
 # is re-signed with our identity: the hardened runtime only loads libraries signed by the same team.
-# An ad-hoc signature has no team, so ad-hoc builds turn library validation off instead.
+# Ad-hoc and self-signed signatures have no team, so those builds turn library validation off instead.
 FW="$APP/Contents/Frameworks/Sparkle.framework"
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$BIN_DIR/Sparkle.framework" "$FW"
@@ -40,7 +40,7 @@ for item in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do
 done
 
 ENTITLEMENTS=Resources/Muesli.entitlements
-if [ "$SIGN_IDENTITY" = - ]; then
+if [ "$(codesign -dv "$FW" 2>&1 | sed -n 's/^TeamIdentifier=//p')" = "not set" ]; then
   ENTITLEMENTS="$(mktemp -t muesli-entitlements).plist"
   cp Resources/Muesli.entitlements "$ENTITLEMENTS"
   plutil -insert com\\.apple\\.security\\.cs\\.disable-library-validation -bool YES "$ENTITLEMENTS"
