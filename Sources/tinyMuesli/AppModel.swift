@@ -543,6 +543,52 @@ final class AppModel {
         NSPasteboard.general.setString(AgentPrompt.text(binaryPath: binary), forType: .string)
     }
 
+    /// Adds the MCP server to the Claude desktop app, which only reads its config at launch. Claude
+    /// also writes that file while running, so it's quit first rather than edited underneath it.
+    func addToClaudeDesktop() {
+        let binary = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: ClaudeDesktopConfig.bundleIdentifier)
+        NSApp.activate()
+
+        if !running.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Restart Claude to add tinyMuesli?"
+            alert.informativeText = "Claude only loads tools when it starts, so tinyMuesli will quit it, add itself, and open it again."
+            alert.addButton(withTitle: "Restart Claude")
+            alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        Task {
+            running.forEach { $0.terminate() }
+            for _ in 0..<100 where running.contains(where: { !$0.isTerminated }) {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            let alert = NSAlert()
+            if running.contains(where: { !$0.isTerminated }) {
+                alert.messageText = "Claude didn't quit"
+                alert.informativeText = "Quit Claude, then choose Add to Claude Desktop again."
+            } else {
+                do {
+                    try ClaudeDesktopConfig.install(binaryPath: binary)
+                    alert.messageText = "Added tinyMuesli to Claude"
+                    alert.informativeText = """
+                        Ask Claude about your meetings in any chat. For better answers, paste the prompt from \
+                        Copy Prompt for Agent into your Claude settings or a project's instructions.
+                        """
+                    if !running.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeDesktopConfig.bundleIdentifier) {
+                        try? await NSWorkspace.shared.openApplication(at: url, configuration: .init())
+                    }
+                } catch {
+                    alert.messageText = "Couldn't add tinyMuesli to Claude"
+                    alert.informativeText = "\(error)"
+                }
+            }
+            NSApp.activate()
+            alert.runModal()
+        }
+    }
+
     // MARK: - Menu bar presentation
 
     var statusSymbol: String {

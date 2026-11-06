@@ -66,6 +66,9 @@ tinyMuesli has a read-only MCP server with the tools `list_meetings`, `get_trans
 prompt into your agent, and it installs the server and learns how to use it. It contains this
 copy's path, so copy it again if you move the app.
 
+The Claude desktop app can't install servers from a chat, so use "Add to Claude Desktop…" in the menu
+instead: it adds the server to Claude's config and restarts Claude. Run it again if you move the app.
+
 To do it by hand, point your MCP client at the binary, using an absolute path:
 
 ```json

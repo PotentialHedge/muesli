@@ -240,3 +240,46 @@ private func makeLibrary() throws -> MeetingLibrary {
         #expect(AgentPrompt.shellQuoted("/a b/it's") == #"'/a b/it'\''s'"#)
     }
 }
+
+@Suite struct ClaudeDesktopConfigTests {
+    func object(_ data: Data) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    @Test func addsTheServerAndKeepsEverythingElse() throws {
+        let existing = Data(#"{"preferences":{"sidebarMode":"chat"},"mcpServers":{"other":{"command":"/o"}}}"#.utf8)
+        let config = try object(ClaudeDesktopConfig.adding(binaryPath: "/A B/tinyMuesli", to: existing))
+        #expect((config["preferences"] as? [String: Any])?["sidebarMode"] as? String == "chat")
+        let servers = try #require(config["mcpServers"] as? [String: Any])
+        #expect((servers["other"] as? [String: Any])?["command"] as? String == "/o")
+        let server = try #require(servers["tinymuesli"] as? [String: Any])
+        #expect(server["command"] as? String == "/A B/tinyMuesli")
+        #expect(server["args"] as? [String] == ["mcp"])
+    }
+
+    @Test func replacesAnOlderPath() throws {
+        let first = try ClaudeDesktopConfig.adding(binaryPath: "/old", to: nil)
+        let config = try object(ClaudeDesktopConfig.adding(binaryPath: "/new", to: first))
+        #expect(((config["mcpServers"] as? [String: Any])?["tinymuesli"] as? [String: Any])?["command"] as? String == "/new")
+    }
+
+    @Test func startsFromAnEmptyFile() throws {
+        let config = try object(ClaudeDesktopConfig.adding(binaryPath: "/x", to: Data("\n".utf8)))
+        #expect((config["mcpServers"] as? [String: Any])?["tinymuesli"] != nil)
+    }
+
+    @Test func refusesSomethingThatIsntAnObject() {
+        #expect(throws: (any Error).self) { try ClaudeDesktopConfig.adding(binaryPath: "/x", to: Data("[]".utf8)) }
+        #expect(throws: (any Error).self) { try ClaudeDesktopConfig.adding(binaryPath: "/x", to: Data("{oops".utf8)) }
+    }
+
+    @Test func installsIntoAFileOnDisk() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "Claude/claude_desktop_config.json")
+        try ClaudeDesktopConfig.install(binaryPath: "/x", at: url)
+        try ClaudeDesktopConfig.install(binaryPath: "/y", at: url)
+        let config = try object(Data(contentsOf: url))
+        #expect(((config["mcpServers"] as? [String: Any])?["tinymuesli"] as? [String: Any])?["command"] as? String == "/y")
+    }
+}
