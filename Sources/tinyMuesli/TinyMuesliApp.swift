@@ -51,7 +51,7 @@ private struct MenuContent: View {
         if !permissions.allGranted {
             ForEach(permissions.missing) { kind in
                 Button {
-                    Task { await permissions.request(kind) }
+                    onboarding.allow(kind)
                 } label: {
                     Label(Self.fixTitle(kind, permissions.state(kind)), systemImage: "exclamationmark.triangle.fill")
                 }
@@ -145,7 +145,7 @@ private struct MenuContent: View {
             ForEach(Permissions.Kind.allCases) { kind in
                 let state = permissions.state(kind)
                 Button {
-                    Task { await permissions.request(kind) }
+                    onboarding.allow(kind)
                 } label: {
                     Label("\(kind.title): \(state.label)", systemImage: state.symbol)
                 }

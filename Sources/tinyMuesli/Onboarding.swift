@@ -4,10 +4,14 @@ import TinyMuesliCore
 
 /// The welcome window: how tinyMuesli works, the permissions it needs, and which apps to record
 /// without asking. Shows on first launch; "Welcome Guide…" in the menu opens it again.
+///
+/// It opens in the middle of the screen. While macOS asks for a permission, it moves so that the
+/// system's prompt sits in the middle of it and explains around it what to click (see `PromptGuide`).
 @MainActor
 final class Onboarding: NSObject, NSWindowDelegate {
     private let model: AppModel
     private let permissions: Permissions
+    private let state = OnboardingState()
     private var window: NSWindow?
 
     init(model: AppModel, permissions: Permissions) {
@@ -26,14 +30,18 @@ final class Onboarding: NSObject, NSWindowDelegate {
         show()
     }
 
-    func show() {
+    /// Opens the window in the middle of the screen (or brings it forward, where it is).
+    func show(at step: OnboardingState.Step? = nil) {
+        if let step { state.go(to: step) }
         if window == nil {
             let view = OnboardingView(
-                model: model, permissions: permissions,
-                bringToFront: { [weak self] in self?.show() },
+                model: model, permissions: permissions, state: state,
+                allow: { [weak self] kind in self?.allow(kind) },
+                bringToFront: { [weak self] in self?.bringToFront() },
                 finish: { [weak self] in self?.window?.close() }
             )
-            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            let hosting = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: hosting)
             window.styleMask = [.titled, .closable, .fullSizeContentView]
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
@@ -41,9 +49,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.delegate = self
-            window.center()
             self.window = window
+            // Size it now: SwiftUI would only do so later, and centring needs the size. The content
+            // runs under the title bar, which SwiftUI adds on top of its own height.
+            let titleBar = window.frame.height - window.contentLayoutRect.height
+            let fitting = hosting.view.fittingSize
+            window.setContentSize(NSSize(width: fitting.width, height: fitting.height + titleBar))
+            moveToCenter(animated: false)
+        } else if state.guide == nil {
+            moveToCenter(animated: true)
         }
+        bringToFront()
+    }
+
+    private func bringToFront() {
         // A menu bar app isn't frontmost, so the window would open behind others.
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
@@ -51,40 +70,143 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window?.orderFrontRegardless()
     }
 
+    /// Exactly in the middle of the screen with the pointer (`NSWindow.center()` puts it higher up).
+    private func moveToCenter(animated: Bool) {
+        guard let window, let screen = NSScreen.withMouse ?? window.screen ?? NSScreen.main else { return }
+        let area = screen.visibleFrame, size = window.frame.size
+        let origin = NSPoint(x: (area.midX - size.width / 2).rounded(), y: (area.midY - size.height / 2).rounded())
+        window.setFrame(NSRect(origin: origin, size: size), display: true, animate: animated)
+    }
+
+    // MARK: - Guiding through a permission prompt
+
+    /// Asks for a permission, guiding the user through macOS's prompt. If macOS won't ask (any more),
+    /// opens System Settings instead.
+    func allow(_ kind: Permissions.Kind) {
+        guard permissions.state(kind) == .notDetermined else { return permissions.openSettings(kind) }
+        show(at: .permissions)
+        guard state.guide == nil else { return }
+
+        let guide = PromptGuide(kind: kind)
+        state.guide = guide
+        // The prompt is a new window: note the ones already there before asking.
+        let locator = PromptLocator(kind: kind)
+        let request = Task { await permissions.request(kind) }
+        Task {
+            if let prompt = await locator.find(), state.guide?.id == guide.id {
+                place(around: prompt)
+            } else if kind == .notifications, state.guide?.id == guide.id {
+                placeBelowNotifications()
+            }
+            await request.value
+            endGuide(guide.id)
+        }
+    }
+
+    /// Back to the middle once the prompt is answered (or the user went back to setup).
+    func endGuide(_ id: UUID? = nil) {
+        guard let guide = state.guide, id == nil || guide.id == id else { return }
+        state.guide = nil
+        moveToCenter(animated: true)
+        bringToFront()
+    }
+
+    /// Moves the window so the prompt sits in it a little above the middle, leaving room above it for
+    /// what to click and below for why.
+    private func place(around promptInCG: CGRect) {
+        guard let window else { return }
+        let prompt = NSScreen.appKitRect(fromCG: promptInCG)
+        let screen = NSScreen.screens.first { $0.frame.intersects(prompt) } ?? window.screen ?? NSScreen.main
+        guard let area = screen?.visibleFrame else { return }
+        let size = window.frame.size
+        let above = ((size.height - prompt.height) * 0.42).rounded()
+        var origin = NSPoint(x: (prompt.midX - size.width / 2).rounded(), y: prompt.maxY + above - size.height)
+        origin.x = min(max(origin.x, area.minX), area.maxX - size.width)
+        origin.y = min(max(origin.y, area.minY), area.maxY - size.height)
+        window.setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+        bringToFront()
+        // Where the prompt is, in the window's top-left coordinates (the view draws around it).
+        let rect = CGRect(x: prompt.minX - origin.x, y: origin.y + size.height - prompt.maxY,
+                          width: prompt.width, height: prompt.height)
+        state.guide?.placement = .around(rect)
+    }
+
+    /// The notifications prompt is a banner in the top right corner: sit just below it, pointing up.
+    private func placeBelowNotifications() {
+        guard let window, let screen = NSScreen.withMouse ?? window.screen ?? NSScreen.main else { return }
+        let area = screen.visibleFrame, size = window.frame.size
+        // Banners are about 344 wide, 16 from the right edge and roughly 80 tall.
+        let bannerMidX = area.maxX - 16 - 172
+        let origin = NSPoint(x: area.maxX - size.width - 12, y: area.maxY - 96 - size.height)
+        window.setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+        bringToFront()
+        state.guide?.placement = .belowBanner(arrowX: bannerMidX - origin.x)
+    }
+
     func windowWillClose(_ notification: Notification) {
         // Closing early counts too: the menu shows what's still missing and can reopen this.
         Settings.completedOnboarding = true
+        state.guide = nil
         window = nil
+    }
+}
+
+/// Which page the window is on, and whether it's guiding through a prompt.
+@MainActor
+@Observable
+final class OnboardingState {
+    enum Step: Int, CaseIterable {
+        case welcome, permissions, apps, ready
+    }
+
+    private(set) var step = Step.welcome
+    private(set) var forward = true
+    var guide: PromptGuide?
+
+    func go(to next: Step) {
+        guard next != step else { return }
+        forward = next.rawValue > step.rawValue
+        withAnimation(.smooth(duration: 0.35)) { step = next }
     }
 }
 
 private struct OnboardingView: View {
     let model: AppModel
     let permissions: Permissions
+    let state: OnboardingState
+    let allow: (Permissions.Kind) -> Void
     let bringToFront: () -> Void
     let finish: () -> Void
 
-    enum Step: Int, CaseIterable {
-        case welcome, permissions, apps, ready
-    }
-
-    @State private var step = Step.welcome
-    @State private var forward = true
+    typealias Step = OnboardingState.Step
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                page(step)
-                    .id(step)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
-                        removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity)
-                    ))
+        ZStack {
+            if let guide = state.guide {
+                PromptGuideView(guide: guide) { [state] in
+                    // Leave the prompt to macOS; just stop pointing at it.
+                    state.guide = nil
+                    bringToFront()
+                }
+                .transition(.opacity)
+            } else {
+                VStack(spacing: 0) {
+                    ZStack {
+                        page(state.step)
+                            .id(state.step)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: state.forward ? .trailing : .leading).combined(with: .opacity),
+                                removal: .move(edge: state.forward ? .leading : .trailing).combined(with: .opacity)
+                            ))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .clipped()
+                    footer
+                }
+                .transition(.opacity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .clipped()
-            footer
         }
+        .animation(.smooth(duration: 0.25), value: state.guide == nil)
         .frame(width: 560, height: 580)
     }
 
@@ -92,7 +214,7 @@ private struct OnboardingView: View {
     private func page(_ step: Step) -> some View {
         switch step {
         case .welcome: WelcomePage(meetingsFolder: model.meetingsFolderName)
-        case .permissions: PermissionsPage(permissions: permissions, bringToFront: bringToFront)
+        case .permissions: PermissionsPage(permissions: permissions, allow: allow, bringToFront: bringToFront)
         case .apps: AppsPage(model: model)
         case .ready: ReadyPage(model: model)
         }
@@ -103,18 +225,18 @@ private struct OnboardingView: View {
             HStack(spacing: 8) {
                 ForEach(Step.allCases, id: \.self) { s in
                     Circle()
-                        .fill(s == step ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
+                        .fill(s == state.step ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
                         .frame(width: 7, height: 7)
                 }
             }
             HStack {
-                if step != .welcome {
+                if state.step != .welcome {
                     Button("Back") { go(by: -1) }
                         .controlSize(.large)
                 }
                 Spacer()
                 Button(nextTitle) {
-                    if step == .ready { finish() } else { go(by: 1) }
+                    if state.step == .ready { finish() } else { go(by: 1) }
                 }
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
@@ -126,7 +248,7 @@ private struct OnboardingView: View {
     }
 
     private var nextTitle: String {
-        switch step {
+        switch state.step {
         case .welcome: "Get Started"
         case .permissions: permissions.allGranted ? "Continue" : "Skip for Now"
         case .apps: "Continue"
@@ -135,9 +257,8 @@ private struct OnboardingView: View {
     }
 
     private func go(by offset: Int) {
-        guard let next = Step(rawValue: step.rawValue + offset) else { return }
-        forward = offset > 0
-        withAnimation(.smooth(duration: 0.35)) { step = next }
+        guard let next = Step(rawValue: state.step.rawValue + offset) else { return }
+        state.go(to: next)
     }
 }
 
@@ -225,6 +346,7 @@ private struct WelcomePage: View {
 
 private struct PermissionsPage: View {
     let permissions: Permissions
+    let allow: (Permissions.Kind) -> Void
     let bringToFront: () -> Void
 
     var body: some View {
@@ -233,7 +355,7 @@ private struct PermissionsPage: View {
                        subtitle: "tinyMuesli only uses these while it's recording a meeting.")
             VStack(spacing: 10) {
                 ForEach(Permissions.Kind.allCases) { kind in
-                    PermissionRow(kind: kind, permissions: permissions)
+                    PermissionRow(kind: kind, permissions: permissions, allow: allow)
                 }
             }
             .padding(.horizontal, 40)
@@ -257,6 +379,7 @@ private struct PermissionsPage: View {
 private struct PermissionRow: View {
     let kind: Permissions.Kind
     let permissions: Permissions
+    let allow: (Permissions.Kind) -> Void
 
     var body: some View {
         let state = permissions.state(kind)
@@ -280,7 +403,7 @@ private struct PermissionRow: View {
                         .foregroundStyle(.green)
                         .fontWeight(.medium)
                 case .notDetermined:
-                    Button("Allow") { Task { await permissions.request(kind) } }
+                    Button("Allow") { allow(kind) }
                         .buttonStyle(.borderedProminent)
                 case .denied, .unknown:
                     Button("Open Settings…") { permissions.openSettings(kind) }
