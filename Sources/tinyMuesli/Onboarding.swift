@@ -465,6 +465,22 @@ private struct AppsPage: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        Card {
+                            HStack(spacing: 10) {
+                                Image(systemName: "checklist")
+                                    .font(.title3)
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 26)
+                                Text("All apps").font(.headline)
+                                Spacer()
+                                Toggle("All apps", isOn: Binding(
+                                    get: { installed.allSatisfy { model.alwaysRecord.contains($0.app.id) } },
+                                    set: { on in installed.forEach { model.setAlwaysRecord($0.app.id, on) } }
+                                ))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                            }
+                        }
                         group("Meeting apps", apps: installed.filter { $0.app.kind == .native })
                         group("Browsers", note: "Records whenever a website uses the mic, not only meetings.",
                               apps: installed.filter { $0.app.kind == .browser })
