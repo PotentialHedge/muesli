@@ -50,4 +50,10 @@ public enum Settings {
         get { defaults.string(forKey: "meetingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) } }
         set { defaults.set(newValue?.standardizedFileURL.path, forKey: "meetingsFolder") }
     }
+
+    /// The welcome window has been through (or closed). It shows on first launch only.
+    public static var completedOnboarding: Bool {
+        get { defaults.bool(forKey: "completedOnboarding") }
+        set { defaults.set(newValue, forKey: "completedOnboarding") }
+    }
 }

@@ -47,7 +47,7 @@ final class NotificationController: NSObject, UNUserNotificationCenterDelegate {
                 intentIdentifiers: []
             ),
         ])
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // Permission is asked for in onboarding (or from the menu), not at launch.
     }
 
     /// - Parameter previous: a recently ended meeting that this one could continue, if any.

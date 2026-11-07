@@ -436,6 +436,11 @@ final class AppModel {
         return head.trimmingCharacters(in: .punctuationCharacters) + "…"
     }
 
+    /// Shows a problem from outside the model (e.g. a menu action) in the menu.
+    func report(_ error: String) {
+        lastError = error
+    }
+
     func showLastError() {
         guard let lastError else { return }
         NSApp.activate()

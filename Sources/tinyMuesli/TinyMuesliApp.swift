@@ -5,30 +5,59 @@ import SwiftUI
 struct TinyMuesliApp: App {
     @State private var model: AppModel
     @State private var updater: Updater
+    @State private var permissions: Permissions
+    @State private var onboarding: Onboarding
 
     init() {
         let model = AppModel()
+        let permissions = Permissions()
+        let onboarding = Onboarding(model: model, permissions: permissions)
         _model = State(initialValue: model)
         _updater = State(initialValue: Updater { model.isBusy })
+        _permissions = State(initialValue: permissions)
+        _onboarding = State(initialValue: onboarding)
         OngoingPill.install()
+        // Once the app has finished launching, so the window can come to the front.
+        DispatchQueue.main.async { onboarding.showIfNeeded() }
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model, updater: updater)
+            MenuContent(model: model, updater: updater, permissions: permissions, onboarding: onboarding)
         } label: {
-            Image(systemName: model.statusSymbol)
+            Image(systemName: menuBarSymbol)
         }
+    }
+
+    /// Flags missing permissions while nothing else is going on.
+    private var menuBarSymbol: String {
+        if case .idle = model.status, model.processing.isEmpty, !permissions.allGranted {
+            return "waveform.badge.exclamationmark"
+        }
+        return model.statusSymbol
     }
 }
 
 private struct MenuContent: View {
     let model: AppModel
     let updater: Updater
+    let permissions: Permissions
+    let onboarding: Onboarding
 
     var body: some View {
         @Bindable var model = model
         @Bindable var updater = updater
+        // Anything missing goes first: without it, meetings aren't noticed or recorded properly.
+        if !permissions.allGranted {
+            ForEach(permissions.missing) { kind in
+                Button {
+                    Task { await permissions.request(kind) }
+                } label: {
+                    Label(Self.fixTitle(kind, permissions.state(kind)), systemImage: "exclamationmark.triangle.fill")
+                }
+            }
+            Divider()
+        }
         Text(model.statusText)
         if let ended = model.endedText {
             Text(ended)
@@ -103,8 +132,29 @@ private struct MenuContent: View {
             Toggle("Keep Audio After Transcribing", isOn: $model.keepAudio)
             Toggle("Skip Silence While Recording", isOn: $model.skipSilence)
             Button("Meetings Folder: \(model.meetingsFolderName)…") { model.chooseMeetingsFolder() }
+            Toggle("Open at Login", isOn: Binding(
+                get: { LoginItem.isEnabled },
+                set: { enabled in
+                    if let error = LoginItem.set(enabled) { model.report(error) }
+                }
+            ))
             Divider()
             Toggle("Check for Updates Automatically", isOn: $updater.checksAutomatically)
+        }
+        Menu {
+            ForEach(Permissions.Kind.allCases) { kind in
+                let state = permissions.state(kind)
+                Button {
+                    Task { await permissions.request(kind) }
+                } label: {
+                    Label("\(kind.title): \(state.label)", systemImage: state.symbol)
+                }
+            }
+            Divider()
+            Button("Welcome Guide…") { onboarding.show() }
+        } label: {
+            // No icon: one would indent every other item in this section.
+            Text(permissions.allGranted ? "Permissions: All Set" : "Permissions: \(permissions.missing.count) Missing")
         }
         Button("Check for Updates…") { updater.checkForUpdates() }
             .disabled(!updater.canCheckForUpdates)
@@ -113,6 +163,16 @@ private struct MenuContent: View {
 
         Button("Quit tinyMuesli") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    /// "Allow Microphone Access…", or where to turn it on once macOS won't ask again.
+    private static func fixTitle(_ kind: Permissions.Kind, _ state: Permissions.State) -> String {
+        let what = switch kind {
+        case .microphone: "Microphone Access"
+        case .systemAudio: "System Audio Recording"
+        case .notifications: "Notifications"
+        }
+        return state == .notDetermined ? "Allow \(what)…" : "Turn On \(what) in Settings…"
     }
 }
 

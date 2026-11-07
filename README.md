@@ -24,7 +24,9 @@ tinyMuesli is an early version, so expect rough edges. It needs macOS 26 or late
 3. Open it. macOS will refuse, because the app isn't signed by Apple. Click **Done**.
 4. Go to **System Settings → Privacy & Security**, scroll down to the message about tinyMuesli, click
    **Open Anyway**, and confirm.
-5. tinyMuesli appears in the menu bar, not the Dock. Allow microphone and system audio access when asked.
+5. A welcome window explains how it works, asks for microphone, system audio and notification access,
+   and lets you pick apps to record without asking. After that tinyMuesli lives in the menu bar, not
+   the Dock; its menu flags any permission that's missing.
 
 You only need to do steps 3 and 4 once. Later versions install through "Check for Updates…" in the
 tinyMuesli menu.

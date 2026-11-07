@@ -15,7 +15,7 @@ public struct MeetingApp: Sendable, Hashable, Identifiable {
     public let kind: Kind
     /// Bundle IDs that count as this app. Helpers match too: `com.google.Chrome` matches
     /// `com.google.Chrome.helper`, since browsers and Electron apps capture audio in helper processes.
-    let bundleIDs: [String]
+    public let bundleIDs: [String]
 
     public init(id: String, name: String, kind: Kind, bundleIDs: [String]? = nil) {
         self.id = id
