@@ -19,11 +19,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.permissions = permissions
     }
 
-    /// On first launch. Someone upgrading from a version without onboarding already has meetings and
-    /// permissions; for them the menu shows anything that's missing.
+    /// On first launch, including a reinstall that kept the meetings. Someone upgrading from a version
+    /// without onboarding already has settings and permissions; for them the menu shows anything missing.
     func showIfNeeded() {
         guard !Settings.completedOnboarding else { return }
-        if !model.store.allMeetings().isEmpty {
+        if !Settings.isFirstLaunch {
             Settings.completedOnboarding = true
             return
         }

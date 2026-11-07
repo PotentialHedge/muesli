@@ -1,6 +1,7 @@
 import Foundation
 import TinyMuesliCore
 
+Settings.noteFirstLaunch()
 Settings.migrateFromMuesli()
 
 // One binary: a CLI when given a known command, otherwise the menu bar app.

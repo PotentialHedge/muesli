@@ -12,6 +12,16 @@ public enum Settings {
     /// The app was called Muesli up to 0.1.2. Copies its preferences (meetings folder, language,
     /// always-record apps, update settings) and copies its hook folder, once, the first time
     /// tinyMuesli runs. Leaves anything tinyMuesli already has alone.
+    /// Nothing was saved yet by tinyMuesli or by Muesli before it: a new install (or a reinstall
+    /// after deleting the preferences). Set by `noteFirstLaunch()` before anything writes settings.
+    public private(set) nonisolated(unsafe) static var isFirstLaunch = false
+
+    /// Call first thing at launch, before `migrateFromMuesli()` and before Sparkle saves its state.
+    public static func noteFirstLaunch() {
+        let domains = [bundleID, "dev.muesli.Muesli"].compactMap { UserDefaults.standard.persistentDomain(forName: $0) }
+        isFirstLaunch = domains.allSatisfy(\.isEmpty)
+    }
+
     public static func migrateFromMuesli() {
         let oldBundleID = "dev.muesli.Muesli"
         if UserDefaults.standard.persistentDomain(forName: bundleID)?.isEmpty ?? true,
