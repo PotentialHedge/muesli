@@ -143,7 +143,7 @@ public struct MeetingStore: Sendable {
     }
 
     /// Start date from the frontmatter, reading only the top of the file.
-    static func start(of meeting: URL) -> Date? {
+    public static func start(of meeting: URL) -> Date? {
         guard let handle = try? FileHandle(forReadingFrom: meeting.appendingPathComponent(MeetingFiles.transcript)),
               let head = try? handle.read(upToCount: 16_384)
         else { return nil }

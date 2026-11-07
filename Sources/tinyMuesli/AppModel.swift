@@ -167,6 +167,23 @@ final class AppModel {
             guard case .detected(let app) = status, app.id == appID else { return }
             // The window may have run out since the prompt was shown: then record it anew.
             if ended != nil { continueMeeting() } else { startRecording(app: app) }
+        case .resumeMeeting(let folder):
+            if let ended, Self.samePath(ended.session.folder, folder) {
+                continueMeeting()
+            } else if !isRecording {
+                // Too late to continue that one (the notice is updated when the window closes, but
+                // may have been answered just before): record anew rather than ignore the click.
+                startRecording(app: detector.current)
+                lastError = "That meeting had already finished, so this is a new recording."
+            }
+        case .openMeeting(let folder):
+            guard FileManager.default.fileExists(atPath: folder.path) else {
+                lastError = "\(folder.lastPathComponent) isn't there any more. It may have been moved or deleted."
+                return
+            }
+            NSWorkspace.shared.open(folder)
+        case .deleteMeeting(let folder):
+            confirmDelete(folder)
         }
     }
 
@@ -221,8 +238,10 @@ final class AppModel {
         }
     }
 
-    func stopRecording() {
+    /// - Parameter notify: post the "meeting ended" notice (not when the next meeting starts at once).
+    func stopRecording(notify: Bool = true) {
         guard case .recording(let session, _) = status else { return }
+        if notify { notifyEnded(session, continuable: false) }
         finish(session)
         // If the meeting app is still on the mic, offer to record it again (without a new prompt).
         status = detector.current.map(Status.detected) ?? .idle
@@ -230,7 +249,7 @@ final class AppModel {
 
     /// Ends the current recording and starts another, for when one meeting runs into the next.
     func startNewMeeting() {
-        stopRecording()
+        stopRecording(notify: false)
         startRecording(app: detector.current)
     }
 
@@ -238,6 +257,7 @@ final class AppModel {
     func continueMeeting() {
         guard let session = ended?.session, !isRecording else { return }
         notifications.removePrompt()
+        notifications.removeMeetingEnded(folder: session.folder)
         clearEndedMeeting()
         do {
             try session.resume()
@@ -255,6 +275,8 @@ final class AppModel {
     func finishEndedMeeting() {
         guard let session = ended?.session else { return }
         clearEndedMeeting()
+        // It can't be continued any more: take that option off its notice, without showing it again.
+        notifyEnded(session, continuable: false, quietly: true)
         finish(session)
     }
 
@@ -265,6 +287,7 @@ final class AppModel {
         session.pause()
         status = .idle
         ended = EndedMeeting(session: session, finishesAt: .now + Self.continueWindow)
+        notifyEnded(session, continuable: true)
         finishTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.continueWindow))
             guard !Task.isCancelled, let self else { return }
@@ -292,6 +315,68 @@ final class AppModel {
         if case .recording = status { true } else { false }
     }
 
+    private func notifyEnded(_ session: RecordingSession, continuable: Bool, quietly: Bool = false) {
+        let length = Self.length((session.pausedAt ?? .now).timeIntervalSince(session.startedAt))
+        notifications.meetingEnded(Self.title(of: session), folder: session.folder, length: length,
+                                   continuableUntil: continuable ? ended?.finishesAt : nil, quietly: quietly)
+    }
+
+    // MARK: - Deleting
+
+    /// Meetings to delete once their final pass is done (it's still reading and writing the folder).
+    private(set) var pendingDeletion: Set<URL> = []
+
+    /// Asks first: a deleted meeting can only be got back from the Trash.
+    func confirmDelete(_ folder: URL) {
+        // "Zoom from 7 Nov 2026 at 10:30"
+        let name = MeetingStore.start(of: folder).map {
+            "\(MeetingStore.displayName(of: folder, start: $0)) from \($0.formatted(date: .abbreviated, time: .shortened))"
+        } ?? folder.lastPathComponent
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete “\(name)”?"
+        alert.informativeText = "Its transcript and any audio are moved to the Trash."
+        let delete = alert.addButton(withTitle: "Delete Meeting")
+        delete.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        deleteMeeting(folder)
+    }
+
+    /// Stops it if it's still being recorded or can be continued, then moves it to the Trash.
+    func deleteMeeting(_ folder: URL) {
+        notifications.removeMeetingEnded(folder: folder)
+        var session: RecordingSession?
+        if let ended, Self.samePath(ended.session.folder, folder) {
+            session = ended.session
+            clearEndedMeeting()
+        } else if case .recording(let current, _) = status, Self.samePath(current.folder, folder) {
+            session = current
+            status = detector.current.map(Status.detected) ?? .idle
+        }
+        if let processingFolder = processing.first(where: { Self.samePath($0, folder) }) {
+            pendingDeletion.insert(processingFolder)
+            return
+        }
+        guard let session else { return trash(folder) }
+        // No final pass; just let live transcription let go of the folder first.
+        session.stop()
+        Task {
+            _ = await session.finishLiveTranscription()
+            trash(folder)
+        }
+    }
+
+    private func trash(_ folder: URL) {
+        do {
+            try FileManager.default.trashItem(at: folder, resultingItemURL: nil)
+        } catch {
+            lastError = "Couldn't delete \(folder.lastPathComponent): \(error.localizedDescription)"
+        }
+        refreshRecentMeetings()
+    }
+
     /// How menus and prompts name a meeting, e.g. "Zoom from 10:30".
     static func title(of session: RecordingSession) -> String {
         "\(session.appName ?? "Meeting") from \(session.startedAt.formatted(date: .omitted, time: .shortened))"
@@ -307,6 +392,7 @@ final class AppModel {
         Task {
             defer {
                 processing.remove(folder)
+                if pendingDeletion.remove(folder) != nil { trash(folder) }
                 refreshRecentMeetings()
             }
             let phrases = await live()
@@ -319,13 +405,14 @@ final class AppModel {
                 if let warning = result.warnings.first { lastError = warning }
                 outcome = .done
             } catch {
-                lastError = "Transcription failed: \(error)"
+                if !pendingDeletion.contains(folder) { lastError = "Transcription failed: \(error)" }
             }
         }
     }
 
     /// Not awaited: a slow hook shouldn't keep the meeting showing as processing.
     private func runHook(folder: URL, status: MeetingMetadata.Status) {
+        guard !pendingDeletion.contains(folder) else { return }  // it's about to go
         let hook = MeetingEndHook()
         Task {
             switch await hook.run(folder: folder, status: status) {
@@ -387,6 +474,7 @@ final class AppModel {
         if case .recording(let session, _) = status { recordingPath = session.folder.standardizedFileURL.resolvingSymlinksInPath().path }
         for meeting in recentMeetings {
             let folder = URL(fileURLWithPath: meeting.path)
+            if pendingDeletion.contains(where: { Self.samePath($0, folder) }) { continue }
             let day = Self.dayTitle(meeting.start, calendar: calendar)
             let name = MeetingStore.displayName(of: folder, start: meeting.start, calendar: calendar)
             let entry = RecentMeeting(
