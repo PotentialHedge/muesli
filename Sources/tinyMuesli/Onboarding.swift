@@ -27,6 +27,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
             Settings.completedOnboarding = true
             return
         }
+        // On by default: tinyMuesli can only notice meetings while it's running. The last page (and
+        // Settings in the menu) can turn it off.
+        if !LoginItem.isEnabled, let error = LoginItem.set(true) { model.report(error) }
         show()
     }
 
@@ -94,12 +97,28 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let request = Task { await permissions.request(kind) }
         Task {
             if let prompt = await locator.find(), state.guide?.id == guide.id {
-                place(around: prompt)
+                place(around: prompt.bounds)
+                follow(prompt.number, of: locator, guide: guide.id, from: prompt.bounds)
             } else if kind == .notifications, state.guide?.id == guide.id {
                 placeBelowNotifications()
             }
             await request.value
             endGuide(guide.id)
+        }
+    }
+
+    /// Keeps the window around the prompt if it still moves or changes size.
+    private func follow(_ number: Int, of locator: PromptLocator, guide id: UUID, from start: CGRect) {
+        Task {
+            var last = start
+            while state.guide?.id == id {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard state.guide?.id == id, let bounds = locator.bounds(of: number) else { return }
+                if bounds != last {
+                    last = bounds
+                    place(around: bounds)
+                }
+            }
         }
     }
 

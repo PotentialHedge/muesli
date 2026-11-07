@@ -32,17 +32,35 @@ struct PromptLocator {
         existing = Set(Self.windows(of: owner).map(\.number))
     }
 
-    /// The prompt's frame in Core Graphics screen coordinates (origin top left of the main screen).
-    func find(timeout: Duration = .seconds(3)) async -> CGRect? {
+    /// The prompt's window number and frame, in Core Graphics screen coordinates (origin top left of
+    /// the main screen). macOS animates the prompt in, so this waits for its frame to settle.
+    func find(timeout: Duration = .seconds(3)) async -> (number: Int, bounds: CGRect)? {
         guard owner != nil else { return nil }
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if let prompt = Self.windows(of: owner).first(where: { !existing.contains($0.number) }) {
-                return prompt.bounds
+                return (prompt.number, await settledBounds(of: prompt.number) ?? prompt.bounds)
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
         return nil
+    }
+
+    /// The frame once it's the same twice in a row (or after a second). Nil if the window went away.
+    private func settledBounds(of number: Int) async -> CGRect? {
+        var last = bounds(of: number)
+        for _ in 0..<10 {
+            try? await Task.sleep(for: .milliseconds(100))
+            let current = bounds(of: number)
+            if current == last { return current }
+            last = current
+        }
+        return last
+    }
+
+    /// Where that window is now; nil once it has closed.
+    func bounds(of number: Int) -> CGRect? {
+        Self.windows(of: owner).first { $0.number == number }?.bounds
     }
 
     private static func windows(of owner: String?) -> [(number: Int, bounds: CGRect)] {
