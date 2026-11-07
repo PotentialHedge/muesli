@@ -175,7 +175,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 @Observable
 final class OnboardingState {
     enum Step: Int, CaseIterable {
-        case welcome, permissions, apps, ready
+        case welcome, permissions, apps, agents, ready
     }
 
     private(set) var step = Step.welcome
@@ -235,6 +235,7 @@ private struct OnboardingView: View {
         case .welcome: WelcomePage(meetingsFolder: model.meetingsFolderName)
         case .permissions: PermissionsPage(permissions: permissions, allow: allow, bringToFront: bringToFront)
         case .apps: AppsPage(model: model)
+        case .agents: AgentsPage(model: model)
         case .ready: ReadyPage(model: model)
         }
     }
@@ -270,7 +271,7 @@ private struct OnboardingView: View {
         switch state.step {
         case .welcome: "Get Started"
         case .permissions: permissions.allGranted ? "Continue" : "Skip for Now"
-        case .apps: "Continue"
+        case .apps, .agents: "Continue"
         case .ready: "Done"
         }
     }
@@ -285,18 +286,15 @@ private struct OnboardingView: View {
 
 /// Big symbol, title and subtitle at the top of each page.
 private struct PageHeader: View {
-    let symbol: String
+    var symbol: String?
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 64, height: 64)
-                .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(.bottom, 4)
+            if let symbol {
+                icon(symbol)
+            }
             Text(title)
                 .font(.largeTitle.bold())
             Text(subtitle)
@@ -306,8 +304,17 @@ private struct PageHeader: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 44)
-        .padding(.bottom, 24)
+        .padding(.bottom, symbol == nil ? 18 : 24)
         .padding(.horizontal, 40)
+    }
+
+    private func icon(_ symbol: String) -> some View {
+            Image(systemName: symbol)
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.bottom, 4)
     }
 }
 
@@ -575,23 +582,152 @@ private struct ReadyPage: View {
                         }
                     }
                 }
-                Card {
-                    HStack(spacing: 14) {
-                        Image(systemName: "sparkles")
-                            .font(.title3)
-                            .foregroundStyle(.tint)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Ask your agent").font(.headline)
-                            Text("Add to Claude Desktop or Copy Prompt for Agent in the menu let an AI agent search your meetings.")
+            }
+            .padding(.horizontal, 40)
+        }
+    }
+}
+
+private struct AgentsPage: View {
+    let model: AppModel
+
+    private struct Agent: Identifiable {
+        let id: String
+        let name: String
+        let icon: NSImage
+    }
+
+    /// The AI apps on this Mac that tinyMuesli can add itself to.
+    private let agents: [Agent] = [
+        AppModel.claudeApp.map { Agent(id: "claude", name: "Claude", icon: NSWorkspace.shared.icon(forFile: $0.path)) },
+        AppModel.chatGPTApp.map { Agent(id: "chatgpt", name: "ChatGPT", icon: NSWorkspace.shared.icon(forFile: $0.path)) },
+    ].compactMap { $0 }
+
+    @State private var added: Set<String> = []
+    @State private var problem: String?
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PageHeader(title: "Ask about your meetings",
+                       subtitle: "Your AI app can read your transcripts through tinyMuesli, right on your Mac.")
+            VStack(spacing: 14) {
+                ChatMock(question: "Give me a to-do list from my last meeting")
+                if agents.isEmpty {
+                    Card {
+                        HStack(spacing: 14) {
+                            Text("Works with AI apps that support MCP, like Claude or ChatGPT. The setup prompt tells your agent how to connect.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            Button(copied ? "Copied" : "Copy Setup Prompt") {
+                                model.copyAgentPrompt()
+                                copied = true
+                            }
                         }
                     }
+                } else {
+                    Card {
+                        VStack(spacing: 10) {
+                            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                                if index > 0 { Divider() }
+                                row(agent)
+                            }
+                        }
+                    }
+                }
+                if let problem {
+                    Text(problem).font(.callout).foregroundStyle(.red)
                 }
             }
             .padding(.horizontal, 40)
         }
+        // Claude is added through a few dialogs (it has to restart): keep checking the configs.
+        .task {
+            while !Task.isCancelled {
+                refresh()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func row(_ agent: Agent) -> some View {
+        HStack(spacing: 10) {
+            Image(nsImage: agent.icon).resizable().frame(width: 28, height: 28)
+            Text(agent.name).font(.headline)
+            Spacer()
+            if added.contains(agent.id) {
+                Label("Added", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .fontWeight(.medium)
+            } else {
+                Button("Add to \(agent.name)") { add(agent) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func add(_ agent: Agent) {
+        switch agent.id {
+        case "claude": model.addToClaudeDesktop()
+        default: problem = model.addToChatGPT()
+        }
+        refresh()
+    }
+
+    private func refresh() {
+        var now: Set<String> = []
+        if ClaudeDesktopConfig.isInstalled() { now.insert("claude") }
+        if CodexConfig.isInstalled() { now.insert("chatgpt") }
+        if now != added { added = now }
+    }
+}
+
+/// An abstract chat: the question, and an answer drawn as placeholder lines, with a note that it
+/// came from tinyMuesli. Shows what's possible without pretending to be any particular app.
+private struct ChatMock: View {
+    let question: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Circle().fill(.quaternary).frame(width: 9, height: 9)
+                }
+            }
+            HStack {
+                Spacer(minLength: 60)
+                Text(question)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkle")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 26, height: 26)
+                    .background(.quaternary, in: Circle())
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Read your last meeting with tinyMuesli", systemImage: "waveform")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach([190.0, 150, 170], id: \.self) { width in
+                        HStack(spacing: 8) {
+                            Image(systemName: "square")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Capsule().fill(.quaternary).frame(width: width, height: 9)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
     }
 }

@@ -83,6 +83,12 @@ Any search index is a derived cache that can be rebuilt from these files.
   reads, and a meeting id only resolves to a folder that exists under the meetings root.
 - **Setup:** "Copy Prompt for Agent" in the menu copies a prompt with this binary's path, which
   tells an agent how to install the MCP server and how to read what it returns.
+- **Onboarding:** an "Ask about your meetings" page shows an abstract chat ("Give me a to-do list from
+  my last meeting") and, for each AI app found, a button to add the MCP server: Claude Desktop
+  (`claude_desktop_config.json`, restarting Claude) and the ChatGPT or Codex app (`~/.codex/config.toml`,
+  where the ChatGPT desktop app's built-in Codex and the Codex CLI read local MCP servers; only our
+  `[mcp_servers.tinymuesli]` table is touched). With neither installed it offers the setup prompt. The
+  menu has "Add to ChatGPT…" when ChatGPT or Codex is installed.
 - **Hook:** after each final pass the app runs `~/.config/tinymuesli/hooks/on-meeting-end`, if it's
   executable, with the meeting folder as its argument and working directory, plus
   `TINYMUESLI_MEETING_DIR`, `TINYMUESLI_TRANSCRIPT_MD`, `TINYMUESLI_TRANSCRIPT_JSON` and `TINYMUESLI_STATUS` (`done`

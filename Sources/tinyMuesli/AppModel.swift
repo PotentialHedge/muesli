@@ -682,6 +682,38 @@ final class AppModel {
         }
     }
 
+    /// The ChatGPT (or Codex) app, if installed: its local MCP servers live in Codex's config.
+    static var chatGPTApp: URL? {
+        CodexConfig.bundleIdentifiers.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
+    }
+
+    static var claudeApp: URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeDesktopConfig.bundleIdentifier)
+    }
+
+    /// Adds the MCP server to ChatGPT's Codex config. Returns an error message if that failed.
+    @discardableResult
+    func addToChatGPT(confirm: Bool = false) -> String? {
+        let binary = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        var problem: String?
+        do {
+            try CodexConfig.install(binaryPath: binary)
+        } catch {
+            problem = "Couldn't add tinyMuesli to ChatGPT: \(error.localizedDescription)"
+        }
+        if confirm {
+            let alert = NSAlert()
+            alert.messageText = problem == nil ? "Added tinyMuesli to ChatGPT" : "Couldn't add tinyMuesli to ChatGPT"
+            alert.informativeText = problem ?? """
+                It's in ~/.codex/config.toml, where the ChatGPT app and Codex find local tools. If ChatGPT \
+                is open, quit and reopen it, then ask about your meetings.
+                """
+            NSApp.activate()
+            alert.runModal()
+        }
+        return problem
+    }
+
     // MARK: - Menu bar presentation
 
     var statusSymbol: String {

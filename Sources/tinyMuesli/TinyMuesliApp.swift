@@ -112,6 +112,9 @@ private struct MenuContent: View {
         Button("Open Meetings Folder") { model.openMeetingsFolder() }
         Button("Copy Prompt for Agent") { model.copyAgentPrompt() }
         Button("Add to Claude Desktop…") { model.addToClaudeDesktop() }
+        if AppModel.chatGPTApp != nil {
+            Button("Add to ChatGPT…") { model.addToChatGPT(confirm: true) }
+        }
 
         Divider()
 

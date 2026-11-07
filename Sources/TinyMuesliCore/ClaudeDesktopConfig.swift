@@ -34,6 +34,14 @@ public enum ClaudeDesktopConfig {
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
+    /// Whether the config at `url` already has the server.
+    public static func isInstalled(at url: URL = defaultURL) -> Bool {
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let servers = root["mcpServers"] as? [String: Any] else { return false }
+        return servers[serverName] != nil
+    }
+
     /// Writes the server into the config at `url`, creating it if needed.
     public static func install(binaryPath: String, at url: URL = defaultURL) throws {
         let existing = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
