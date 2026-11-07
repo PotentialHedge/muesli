@@ -28,7 +28,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     func show() {
         if window == nil {
-            let view = OnboardingView(model: model, permissions: permissions) { [weak self] in self?.window?.close() }
+            let view = OnboardingView(
+                model: model, permissions: permissions,
+                bringToFront: { [weak self] in self?.show() },
+                finish: { [weak self] in self?.window?.close() }
+            )
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.styleMask = [.titled, .closable, .fullSizeContentView]
             window.titlebarAppearsTransparent = true
@@ -57,6 +61,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 private struct OnboardingView: View {
     let model: AppModel
     let permissions: Permissions
+    let bringToFront: () -> Void
     let finish: () -> Void
 
     enum Step: Int, CaseIterable {
@@ -87,7 +92,7 @@ private struct OnboardingView: View {
     private func page(_ step: Step) -> some View {
         switch step {
         case .welcome: WelcomePage(meetingsFolder: model.meetingsFolderName)
-        case .permissions: PermissionsPage(permissions: permissions)
+        case .permissions: PermissionsPage(permissions: permissions, bringToFront: bringToFront)
         case .apps: AppsPage(model: model)
         case .ready: ReadyPage(model: model)
         }
@@ -220,6 +225,7 @@ private struct WelcomePage: View {
 
 private struct PermissionsPage: View {
     let permissions: Permissions
+    let bringToFront: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -238,6 +244,12 @@ private struct PermissionsPage: View {
                 permissions.refresh()
                 try? await Task.sleep(for: .seconds(1))
             }
+        }
+        // Once the system prompt is answered (or the switch flipped in System Settings), macOS hands
+        // focus back to whichever app was in front before, leaving this window buried behind it.
+        // With no Dock icon that looks as if tinyMuesli quit, so come back to the front.
+        .onChange(of: Permissions.Kind.allCases.map(permissions.state)) {
+            bringToFront()
         }
     }
 }
